@@ -60,7 +60,43 @@ local drawingactor = loadstring(downloadFile('newvape/libraries/drawing.lua'), '
 local redline = {Teams = {}}
 local starttime = os.clock()
 local TargetStrafeVector
-local latestHash = '58d1d478b3ef55b0753de656b072893cc59c899a05ea55662ae4625da6be1892e259f9c6012db937d8f7450531cc162e'
+local latestHash = 'c401462bc7f7f49e53b4a8da2de5b57bc2d7e14df1b773e5ccd1bcddb28db9c843b8902d2c93738a2f042e533d3d4971'
+local redline_boxes = {
+	{
+		boxtype = 'redliner_melee',
+		data = {
+			size = Vector3.new(17.75, 14, 22),
+			offset = CFrame.new(0, 0, -11)
+		}
+	},
+	{
+		boxtype = 'redliner_charged_melee',
+		data = {
+			size = Vector3.new(39, 14, 35),
+			offset = CFrame.new(0, -0.5, -9)
+		}
+	}
+}
+
+local function castHitbox(data, origin)
+	local hit_hurtboxes = {}
+	local params = OverlapParams.new()
+	params.FilterType = Enum.RaycastFilterType.Include
+	params.RespectCanCollide = false
+	params.FilterDescendantsInstances = collectionService:GetTagged('Hurtbox')
+
+	for _, v in params.FilterDescendantsInstances do
+		v.Transparency = 0
+	end
+
+	for _, hit in workspace:GetPartBoundsInBox(origin * data.offset, data.size, params) do
+		if hit:FindFirstAncestorWhichIsA('Model') ~= lplr.Character then
+			table.insert(hit_hurtboxes, hit)
+		end
+	end
+
+	return hit_hurtboxes
+end
 
 local function searchForPacket(func, unreliable)
 	for _, v in debug.getconstants(func) do
@@ -333,6 +369,23 @@ entitylib.start()
 
 run(function()
 	local root
+
+	for i = 1, 3 do
+		local doBreak
+		for _, v in getloadedmodules() do
+			if v:GetFullName() == 'Start.Client.ClientRoot' then
+				doBreak = true
+				break
+			end
+		end
+
+		if doBreak then
+			break
+		end
+
+		task.wait(0.5)
+	end
+
 	for _, v in getloadedmodules() do
 		if v:GetFullName() == 'Start.Client.ClientRoot' then
 			if getscripthash(v) ~= latestHash then
@@ -363,11 +416,9 @@ run(function()
 
 	local classList = rawget(root, 'Classes') or {}
 	redline = setmetatable({
-		AttackBox = require(replicatedStorage.Assets.ModuleScripts.Attack),
-		AttackCast = require(replicatedStorage.Assets.ModuleScripts.Attack.Hitbox),
 		CEnum = require(replicatedStorage.Assets.ModuleScripts.CEnum),
 		Packets = require(replicatedStorage.Assets.ModuleScripts.Packets),
-		Packet = debug.getupvalue(getrawmetatable(require(replicatedStorage.Assets.ModuleScripts.Packets.Packet)).__call, 2),
+		Packet = debug.getupvalue(getrawmetatable(require(replicatedStorage.Assets.ModuleScripts.Packets.Packet)).__call, 3),
 		Util = require(replicatedStorage.Assets.SharedClasses.Util),
 		Teams = redline.Teams
 	}, {
@@ -380,7 +431,7 @@ run(function()
 		Constants = {
 			ShootFunction = function(constants, func, inst)
 				for _, const in constants do
-					if const == 'ViewportPointToRay' then
+					if const == 'ViewportPointToRay' and debug.info(func, 'n'):sub(1, 1) == '_' then
 						redline.ShootFunction = require(inst)[debug.info(func, 'n')]
 						break
 					end
@@ -388,7 +439,7 @@ run(function()
 			end,
 			ActionController = function(constants, func, inst)
 				for _, const in constants do
-					if const == 'getAction FAILED FOR : ' then
+					if const == 'getAction FAILED FOR : ' and debug.info(func, 'n'):sub(1, 1) == '_' then
 						redline.ActionController = inst.Name
 						redline.ActionFunction = require(inst)[debug.info(func, 'n')]
 						break
@@ -399,30 +450,6 @@ run(function()
 				for _, const in constants do
 					if const == 'INVALID crosshair_name : ' then
 						redline.IndicatorController = inst.Name
-						break
-					end
-				end
-			end,
-			ReplicateFunction = function(constants, func, inst)
-				for _, const in constants do
-					if const == 'Message cannot be empty' then
-						redline.ReplicateFunction = require(inst)[debug.info(func, 'n')]
-						break
-					end
-				end
-			end,
-			MoveController = function(constants, func, inst)
-				for _, const in constants do
-					if const == 'getMoveDirection' then
-						local found = {}
-						for _, const2 in constants do
-							if tostring(const2):find('_') then
-								table.insert(found, const2)
-							end
-						end
-
-						redline.MoveController = found[1]
-						redline.VelocityName = found[2]
 						break
 					end
 				end
@@ -447,7 +474,7 @@ run(function()
 			AttackPacket = function(protos, func, inst)
 				for _, proto in protos do
 					if debug.info(proto, 'n') == 'redlinerMelee' then
-						redline.AttackPacket = searchForPacket(debug.getproto(debug.getproto(proto, 1), 1))
+						redline.AttackPacket = searchForPacket(proto)
 						if redline.AttackPacket then
 							redline.AttackPacket = redline.Packets[redline.AttackPacket].Name
 						end
@@ -460,7 +487,7 @@ run(function()
 				for _, proto in protos do
 					if debug.info(proto, 'n') == 'removeShotIndicator' then
 						for _, const in debug.getconstants(proto) do
-							if tostring(const):find('_') then
+							if tostring(const):sub(1, 1) == '_' then
 								redline.IndicatorTable = const
 								break
 							end
@@ -553,35 +580,49 @@ run(function()
 	end))
 end)
 
-local HitboxHook = {Hooks = {}}
+local SendHook = {Hooks = {}}
 do
-	local oldscan
+	local oldsend
 
 	local function Hook(...)
-		local results = table.pack(oldscan(...))
-		for _, v in HitboxHook.Hooks do
-			if v[2](results) then
-				return {}
+		local args = table.pack(...)
+		for _, v in SendHook.Hooks do
+			if v[2](args) then
+				return
 			end
 		end
 
-		return unpack(results, 1, results.n)
+		return oldsend(unpack(args, 1, args.n))
 	end
 
-	function HitboxHook:Add(key, val, priority)
-		table.insert(self.Hooks, {key, val, priority or 0})
-		table.sort(self.Hooks, function(a, b)
-			return a[3] < b[3]
-		end)
-
-		if not oldscan then
-			oldscan = hookfunction(redline.AttackBox.castOnce, function(...)
+	function SendHook:DoHook()
+		if not oldsend and next(self.Hooks) then
+			oldsend = hookfunction(redline.Packet.Fire, function(...)
 				return Hook(...)
 			end)
 		end
 	end
 
-	function HitboxHook:Remove(key)
+	function SendHook:Add(key, val, priority)
+		table.insert(self.Hooks, {key, val, priority or 0})
+		table.sort(self.Hooks, function(a, b)
+			return a[3] < b[3]
+		end)
+
+		if not oldsend then
+			if (os.clock() - starttime) < 2 then
+				task.defer(function()
+					task.delay(2, function()
+						self:DoHook()
+					end)
+				end)
+			else
+				self:DoHook()
+			end
+		end
+	end
+
+	function SendHook:Remove(key)
 		for i, v in self.Hooks do
 			if v[1] == key then
 				table.remove(self.Hooks, i)
@@ -589,14 +630,14 @@ do
 			end
 		end
 
-		if oldscan and not next(self.Hooks) then
+		if oldsend and not next(self.Hooks) then
 			if restorefunction then
-				restorefunction(redline.AttackBox.castOnce)
+				restorefunction(redline.Packet.Fire)
 			else
-				hookfunction(redline.AttackBox.castOnce, oldscan)
+				hookfunction(redline.Packet.Fire, oldsend)
 			end
 
-			oldscan = nil
+			oldsend = nil
 		end
 	end
 end
@@ -604,6 +645,37 @@ end
 for _, v in {'Reach', 'TriggerBot', 'AntiFall', 'Desync', 'HitBoxes', 'Invisible', 'Jesus', 'MouseTP', 'Spider', 'SpinBot', 'Swim', 'TargetStrafe', 'AntiRagdoll', 'Disabler', 'StateSpoofer', 'Parkour', 'SafeWalk', 'MurderMystery'} do
 	vape:Remove(v)
 end
+
+run(function()
+	local Reach
+	local Spoof
+	local Add
+	local oldsend, oldrepl, oldbuf
+	
+	Reach = vape.Categories.Combat:CreateModule({
+		Name = 'Reach',
+		Function = function(callback)
+			if callback then
+				SendHook:Add('Reach', function(args)
+					local self = args[1]
+					if self and rawget(self, 'Name') == redline.AttackPacket then
+						if typeof(args[4]) == 'string' then
+							for _, box in redline_boxes do
+								if #castHitbox(box.data, CFrame.lookAlong(entitylib.character.RootPart.Position + Vector3.new(0, 2, 0), args[5])) > 0 then
+									args[4] = box.boxtype
+									break
+								end
+							end
+						end
+					end
+				end, 2)
+			else
+				SendHook:Remove('Reach')
+			end
+		end,
+		Tooltip = 'Extends attack reach by picking the best hitbox type. (RISKY)'
+	})
+end)
 
 run(function()
 	local SilentAim
@@ -756,27 +828,37 @@ run(function()
 		Name = 'AntiParry',
 		Function = function(callback)
 			if callback then
-				HitboxHook:Add('AntiParry', function(results)
-					if type(results[1]) == 'table' then
-						for _, hit in next, table.clone(results[1]) do
-							local char = hit:FindFirstAncestorWhichIsA('Model')
-							local animator = char and char:FindFirstChild('Animator', true)
+				SendHook:Add('AntiParry', function(args)
+					local self = args[1]
+					if self and rawget(self, 'Name') == redline.AttackPacket and typeof(args[5]) == 'Vector3' then
+						local origin = CFrame.lookAlong(entitylib.character.RootPart.Position + Vector3.new(0, 2, 0), args[5])
+						for _, box in redline_boxes do
+							if box.boxtype == args[4] then
+								local results = castHitbox(box.data, origin)
+								for _, hit in results do
+									local char = hit:FindFirstAncestorWhichIsA('Model')
+									local animator = char and char:FindFirstChild('Animator', true)
 	
-							if animator and animator:IsA('Animator') then
-								for _, track in animator:GetPlayingAnimationTracks() do
-									if track.IsPlaying and anims[track.Animation.AnimationId] then
-										local index = table.find(results[1], hit)
-										if index then
-											table.remove(results[1], index)
+									if animator and animator:IsA('Animator') then
+										for _, track in animator:GetPlayingAnimationTracks() do
+											if track.IsPlaying and anims[track.Animation.AnimationId] then
+												task.spawn(function()
+													notif('AntiParry', 'Parry found, blocking hit.', 1)
+												end)
+	
+												return true
+											end
 										end
 									end
 								end
+	
+								break
 							end
 						end
 					end
-				end, 2)
+				end, 3)
 			else
-				HitboxHook:Remove('AntiParry')
+				SendHook:Remove('AntiParry')
 			end
 		end,
 		Tooltip = 'Ignores all targets with the parrying animation'
@@ -828,209 +910,6 @@ run(function()
 			end
 		end,
 		Tooltip = 'lol'
-	})
-end)
-
-run(function()
-	local ClashSpoofer
-	local Spoof
-	local Add
-	local oldsend, oldrepl, oldbuf
-	
-	local function AddHook()
-		if not (ClashSpoofer.Enabled and redline.ReplicateFunction) then
-			return
-		end
-	
-		oldsend = hookfunction(redline.Packet.Fire, function(...)
-			local self = ...
-			if self and rawget(self, 'Name') == redline.AttackPacket then
-				local args = table.pack(...)
-				if type(args[7]) == 'number' then
-					args[7] = Add.Enabled and args[7] + Spoof.Value or Spoof.Value
-				end
-	
-				return oldsend(unpack(args, 1, args.n))
-			end
-	
-			return oldsend(...)
-		end)
-	
-		local dumped, dumpcaller
-		oldrepl = hookfunction(redline.ReplicateFunction, function(...)
-			local msg = ...
-	
-			if dumped then
-				if debug.info(2, 's') == dumpcaller or debug.info(3, 's') == dumpcaller then
-					buffer.writef32(msg, dumped, Add.Enabled and buffer.readf32(msg, dumped) + Spoof.Value or Spoof.Value)
-				end
-			end
-	
-			return oldrepl(...)
-		end)
-	
-		oldbuf = hookfunction(buffer.writef32, function(...)
-			local buf, ind, data = ...
-			if data == -2.25 then
-				dumped = ind
-				dumpcaller = debug.info(3, 's')
-	
-				task.defer(function()
-					if oldbuf then
-						if restorefunction then
-							restorefunction(buffer.writef32)
-						else
-							hookfunction(buffer.writef32, oldbuf)
-						end
-	
-						oldbuf = nil
-					end
-				end)
-			end
-	
-			return oldbuf(...)
-		end)
-	end
-	
-	ClashSpoofer = vape.Categories.Blatant:CreateModule({
-		Name = 'ClashSpoofer',
-		Function = function(callback)
-			if callback then
-				if (os.clock() - starttime) < 2 then
-					task.defer(function()
-						task.delay(2, AddHook)
-					end)
-				else
-					AddHook()
-				end
-			else
-				if oldsend then
-					if restorefunction then
-						restorefunction(redline.Packet.Fire)
-					else
-						hookfunction(redline.Packet.Fire, oldsend)
-					end
-					oldsend = nil
-				end
-	
-				if oldrepl then
-					if restorefunction then
-						restorefunction(redline.ReplicateFunction)
-					else
-						hookfunction(redline.ReplicateFunction, oldrepl)
-					end
-					oldrepl = nil
-				end
-	
-				if oldbuf then
-					if restorefunction then
-						restorefunction(buffer.writef32)
-					else
-						hookfunction(buffer.writef32, oldbuf)
-					end
-					oldbuf = nil
-				end
-			end
-		end,
-		Tooltip = 'Spoofs velocity to a specified value to help win clashes. (RISKY)'
-	})
-	Spoof = ClashSpoofer:CreateSlider({
-		Name = 'Spoof value',
-		Min = 300,
-		Max = 800,
-		Default = 800,
-		Suffix = 'sps'
-	})
-	Add = ClashSpoofer:CreateToggle({
-		Name = 'Add velocity',
-		Tooltip = 'Add velocity instead of setting it, good for closet cheating.'
-	})
-end)
-
-local Fly
-local LongJump
-run(function()
-	local Value
-	local VerticalValue
-	local up, down = 0, 0
-
-	Fly = vape.Categories.Blatant:CreateModule({
-		Name = 'Fly',
-		Function = function(callback)
-			if callback then
-				if redline[redline.MoveController] and typeof(redline[redline.MoveController][redline.VelocityName]) == 'Vector3' then
-					Fly:Clean(runService.PreSimulation:Connect(function(dt)
-						local dir = ((TargetStrafeVector or redline[redline.MoveController]:getMoveDirection()) * Value.Value) + Vector3.new(0, 3.5 + (up + down) * VerticalValue.Value, 0)
-						redline[redline.MoveController][redline.VelocityName] = dir
-					end))
-				end
-
-				up, down = 0, 0
-				for _, v in {'InputBegan', 'InputEnded'} do
-					Fly:Clean(inputService[v]:Connect(function(input)
-						if not inputService:GetFocusedTextBox() then
-							if input.KeyCode == Enum.KeyCode.Space then
-								up = v == 'InputBegan' and 1 or 0
-							elseif input.KeyCode == Enum.KeyCode.LeftAlt then
-								down = v == 'InputBegan' and -1 or 0
-							end
-						end
-					end))
-				end
-			end
-		end,
-		ExtraText = function()
-			return 'Redliner'
-		end,
-		Tooltip = 'Makes you go zoom.'
-	})
-	Value = Fly:CreateSlider({
-		Name = 'Speed',
-		Min = 1,
-		Max = 150,
-		Default = 50,
-		Suffix = function(val)
-			return val == 1 and 'stud' or 'studs'
-		end
-	})
-	VerticalValue = Fly:CreateSlider({
-		Name = 'Vertical Speed',
-		Min = 1,
-		Max = 150,
-		Default = 50,
-		Suffix = function(val)
-			return val == 1 and 'stud' or 'studs'
-		end
-	})
-end)
-
-run(function()
-	local HighJump
-	local Value
-	
-	HighJump = vape.Categories.Blatant:CreateModule({
-		Name = 'HighJump',
-		Function = function(callback)
-			if callback then
-				HighJump:Toggle()
-				if redline[redline.MoveController] and typeof(redline[redline.MoveController][redline.VelocityName]) == 'Vector3' then
-					redline[redline.MoveController][redline.VelocityName] += Vector3.new(0, Value.Value, 0)
-				end
-			end
-		end,
-		ExtraText = function()
-			return 'Redliner'
-		end,
-		Tooltip = 'Lets you jump higher'
-	})
-	Value = HighJump:CreateSlider({
-		Name = 'Velocity',
-		Min = 1,
-		Max = 150,
-		Default = 50,
-		Suffix = function(val)
-			return val == 1 and 'stud' or 'studs'
-		end
 	})
 end)
 
@@ -1095,23 +974,32 @@ run(function()
 			end
 		end
 	
-		return true
+		local origin = CFrame.lookAt(entitylib.character.RootPart.Position + Vector3.new(0, 2, 0), ent.RootPart.Position)
+		for _, box in redline_boxes do
+			if #castHitbox(box.data, origin) > 0 then
+				return true
+			end
+		end
+	
+		return false
 	end
 	
 	Killaura = vape.Categories.Blatant:CreateModule({
 		Name = 'Killaura',
 		Function = function(callback)
 			if callback then
-				HitboxHook:Add('Killaura', function(results)
-					if type(results[1]) == 'table' then
+				SendHook:Add('Killaura', function(args)
+					local self = args[1]
+					if self and rawget(self, 'Name') == redline.AttackPacket and typeof(args[5]) == 'Vector3' then
 						local ent = getTarget()
 	
 						if ent then
-							Overlay.FilterDescendantsInstances = collectionService:GetTagged('Hurtbox')
-							local parts = workspace:GetPartBoundsInRadius(ent.RootPart.Position, 6, Overlay)
-	
-							for _, v in parts do
-								table.insert(results[1], v)
+							local origin = CFrame.lookAt(entitylib.character.RootPart.Position + Vector3.new(0, 2, 0), ent.RootPart.Position)
+							for _, box in redline_boxes do
+								if #castHitbox(box.data, origin) > 0 then
+									args[5] = origin.LookVector
+									break
+								end
 							end
 						end
 					end
@@ -1153,7 +1041,7 @@ run(function()
 					task.wait(0.05)
 				until not Killaura.Enabled
 			else
-				HitboxHook:Remove('Killaura')
+				SendHook:Remove('Killaura')
 	
 				for _, v in Boxes do
 					v.Adornee = nil
@@ -1311,299 +1199,20 @@ run(function()
 end)
 
 run(function()
-	local Mode
-	local Value
-	local AutoDisable
-	
-	LongJump = vape.Categories.Blatant:CreateModule({
-		Name = 'LongJump',
-		Function = function(callback)
-			if callback then
-				local exempt = tick() + 0.1
-				if redline[redline.MoveController] and typeof(redline[redline.MoveController][redline.VelocityName]) == 'Vector3' then
-					LongJump:Clean(runService.PreSimulation:Connect(function(dt)
-						if entitylib.isAlive then
-							local dir = redline[redline.MoveController]:getMoveDirection() * Value.Value
-							local oldvel = redline[redline.MoveController][redline.VelocityName]
-	
-							if entitylib.character.Humanoid.FloorMaterial ~= Enum.Material.Air then
-								if exempt < tick() and AutoDisable.Enabled then
-									if LongJump.Enabled then
-										LongJump:Toggle()
-									end
-								else
-									oldvel = Vector3.new(0, 40, 0)
-								end
-							end
-	
-							redline[redline.MoveController][redline.VelocityName] = Vector3.new(dir.X, oldvel.Y, dir.Z)
-						end
-					end))
-				end
-			end
-		end,
-		ExtraText = function()
-			return 'Redliner'
-		end,
-		Tooltip = 'Lets you jump farther'
-	})
-	Value = LongJump:CreateSlider({
-		Name = 'Speed',
-		Min = 1,
-		Max = 150,
-		Default = 50,
-		Suffix = function(val)
-			return val == 1 and 'stud' or 'studs'
-		end
-	})
-	AutoDisable = LongJump:CreateToggle({
-		Name = 'Auto Disable',
-		Default = true
-	})
-end)
-
-run(function()
-	local Speed
-	local Value
-	local AutoJump
-	local AutoJumpCustom
-	local AutoJumpValue
-	
-	Speed = vape.Categories.Blatant:CreateModule({
-		Name = 'Speed',
-		Function = function(callback)
-			if callback then
-				if redline[redline.MoveController] and typeof(redline[redline.MoveController][redline.VelocityName]) == 'Vector3' then
-					Speed:Clean(runService.PreSimulation:Connect(function()
-						if not Fly.Enabled and not LongJump.Enabled then
-							local dir = (TargetStrafeVector or redline[redline.MoveController]:getMoveDirection()) * Value.Value
-							local oldvel = redline[redline.MoveController][redline.VelocityName]
-	
-							if AutoJump.Enabled and entitylib.isAlive and entitylib.character.Humanoid.FloorMaterial ~= Enum.Material.Air and dir.Magnitude > 0.01 then
-								oldvel = Vector3.new(0, AutoJumpCustom.Enabled and AutoJumpValue.Value or 40, 0)
-							end
-	
-							redline[redline.MoveController][redline.VelocityName] = Vector3.new(dir.X, oldvel.Y, dir.Z)
-						end
-					end))
-				end
-			end
-		end,
-		ExtraText = function()
-			return 'Redliner'
-		end,
-		Tooltip = 'Increases your movement with various methods.'
-	})
-	Value = Speed:CreateSlider({
-		Name = 'Speed',
-		Min = 1,
-		Max = 150,
-		Default = 100,
-		Suffix = function(val)
-			return val == 1 and 'stud' or 'studs'
-		end
-	})
-	AutoJump = Speed:CreateToggle({
-		Name = 'AutoJump',
-		Function = function(callback)
-			AutoJumpCustom.Object.Visible = callback
-		end
-	})
-	AutoJumpCustom = Speed:CreateToggle({
-		Name = 'Custom Jump',
-		Function = function(callback)
-			AutoJumpValue.Object.Visible = callback
-		end,
-		Tooltip = 'Allows you to adjust the jump power',
-		Darker = true,
-		Visible = false
-	})
-	AutoJumpValue = Speed:CreateSlider({
-		Name = 'Jump Power',
-		Min = 1,
-		Max = 50,
-		Default = 30,
-		Darker = true,
-		Visible = false
-	})
-end)
-
-run(function()
-	local TargetStrafe
-	local Targets
-	local SearchRange
-	local StrafeRange
-	local YFactor
-	local rayCheck = RaycastParams.new()
-	rayCheck.FilterDescendantsInstances = {workspace.Map}
-	rayCheck.FilterType = Enum.RaycastFilterType.Include
-	
-	TargetStrafe = vape.Categories.Blatant:CreateModule({
-		Name = 'TargetStrafe',
-		Function = function(callback)
-			if callback then
-				local flymod, ang, oldent = vape.Modules.Fly or {Enabled = false}
-				TargetStrafe:Clean(runService.PreSimulation:Connect(function()
-					local vec
-					local wallcheck = Targets.Walls.Enabled
-					local ent = not inputService:IsKeyDown(Enum.KeyCode.S) and entitylib.EntityPosition({
-						Range = SearchRange.Value,
-						Wallcheck = wallcheck,
-						Part = 'RootPart',
-						Players = Targets.Players.Enabled,
-						NPCs = Targets.NPCs.Enabled
-					})
-	
-					if ent then
-						local root, targetPos = entitylib.character.RootPart, ent.RootPart.Position
-	
-						if flymod.Enabled or workspace:Raycast(targetPos, Vector3.new(0, -70, 0), rayCheck) then
-							local factor, localPosition = 0, root.Position
-							if ent ~= oldent then
-								ang = math.deg(select(2, CFrame.lookAt(targetPos, localPosition):ToEulerAnglesYXZ()))
-							end
-	
-							local yFactor = math.abs(localPosition.Y - targetPos.Y) * (YFactor.Value / 100)
-							local entityPos = Vector3.new(targetPos.X, localPosition.Y, targetPos.Z)
-							local newPos = entityPos + (CFrame.Angles(0, math.rad(ang), 0).LookVector * (StrafeRange.Value - yFactor))
-							local startRay, endRay = entityPos, newPos
-	
-							if not wallcheck and workspace:Raycast(targetPos, (localPosition - targetPos), rayCheck) then
-								startRay, endRay = entityPos + (CFrame.Angles(0, math.rad(ang), 0).LookVector * (entityPos - localPosition).Magnitude), entityPos
-							end
-	
-							local ray = workspace:Blockcast(CFrame.new(startRay), Vector3.new(1, entitylib.character.HipHeight + (root.Size.Y / 2), 1), (endRay - startRay), rayCheck)
-							if (localPosition - newPos).Magnitude < 3 or ray then
-								factor = (8 - math.min((localPosition - newPos).Magnitude, 3))
-								if ray then
-									newPos = ray.Position + (ray.Normal * 1.5)
-									factor = (localPosition - newPos).Magnitude > 3 and 0 or factor
-								end
-							end
-	
-							if not flymod.Enabled and not workspace:Raycast(newPos, Vector3.new(0, -70, 0), rayCheck) then
-								newPos = entityPos
-								factor = 40
-							end
-	
-							ang += factor % 360
-							vec = ((newPos - localPosition) * Vector3.new(1, 0, 1)).Unit
-							vec = vec == vec and vec or Vector3.zero
-							TargetStrafeVector = vec
-						else
-							ent = nil
-						end
-					end
-	
-					TargetStrafeVector = ent and vec or nil
-					oldent = ent
-				end))
-			else
-				TargetStrafeVector = nil
-			end
-		end,
-		Tooltip = 'Automatically strafes around the opponent'
-	})
-	Targets = TargetStrafe:CreateTargets({
-		Players = true,
-		Walls = true
-	})
-	SearchRange = TargetStrafe:CreateSlider({
-		Name = 'Search Range',
-		Min = 1,
-		Max = 30,
-		Default = 24,
-		Suffix = function(val)
-			return val == 1 and 'stud' or 'studs'
-		end
-	})
-	StrafeRange = TargetStrafe:CreateSlider({
-		Name = 'Strafe Range',
-		Min = 1,
-		Max = 30,
-		Default = 18,
-		Suffix = function(val)
-			return val == 1 and 'stud' or 'studs'
-		end
-	})
-	YFactor = TargetStrafe:CreateSlider({
-		Name = 'Y Factor',
-		Min = 0,
-		Max = 100,
-		Default = 100,
-		Suffix = '%'
-	})
-end)
-
-run(function()
-	local AutoLeave
-	local Delay
-	
-	AutoLeave = vape.Categories.Utility:CreateModule({
-		Name = 'AutoLeave',
-		Function = function(callback)
-			if callback then
-				AutoLeave:Clean(vapeEvents.MatchEnded.Event:Connect(function(_, obj)
-					task.delay(Delay.Value, function()
-						firesignal(obj.Main.Actions.returnbutton.MouseButton1Click)
-					end)
-				end))
-			end
-		end,
-		Tooltip = 'Automatically leave after the match ends.'
-	})
-	Delay = AutoLeave:CreateSlider({
-		Name = 'Delay',
-		Min = 0,
-		Max = 2,
-		Default = 1,
-		Decimal = 10,
-		Suffix = 'seconds'
-	})
-end)
-
-run(function()
 	local AutoQueue
-	local Mode
 	
 	AutoQueue = vape.Categories.Utility:CreateModule({
 		Name = 'AutoQueue',
 		Function = function(callback)
-			if game.PlaceId == 94987506187454 then
-				if callback then
-					repeat
-						if redline.MenuManager.current_session then
-							local client = redline.MenuManager.current_session.midframe_renderer._client
-	
-							if client:canQueue() then
-								client:enqueue({redline.CEnum.Queues[Mode.Value] or 1})
-							end
-						end
-	
-						task.wait(0.1)
-					until not AutoQueue.Enabled
-				else
-					if redline.MenuManager.current_session then
-						local client = redline.MenuManager.current_session.midframe_renderer._client
-						local state = client:getQueueState()
-	
-						if state.is_queued then
-							client:dequeue()
-						end
-					end
-				end
+			if callback then
+				AutoQueue:Clean(vapeEvents.MatchEnded.Event:Connect(function(_, obj)
+					task.delay(2, function()
+						firesignal(obj.Main.requeuebutton.Activated)
+					end)
+				end))
 			end
 		end,
-		Tooltip = 'Automatically queue for a new match in the lobby.'
-	})
-	local queueList = {}
-	for i in redline.CEnum.Queues do
-		table.insert(queueList, i)
-	end
-	Mode = AutoQueue:CreateDropdown({
-		Name = 'Mode',
-		List = queueList,
-		Default = 'Duels1v1'
+		Tooltip = 'Automatically requeue after the match ends.'
 	})
 end)
 
@@ -1698,33 +1307,6 @@ run(function()
 			end
 		end
 	end)
-end)
-
-run(function()
-	local Gravity
-	local Value
-	
-	Gravity = vape.Categories.World:CreateModule({
-		Name = 'Gravity',
-		Function = function(callback)
-			if callback then
-				if redline[redline.MoveController] and typeof(redline[redline.MoveController][redline.VelocityName]) == 'Vector3' then
-					Gravity:Clean(runService.PreSimulation:Connect(function(dt)
-						if entitylib.isAlive and entitylib.character.Humanoid.FloorMaterial == Enum.Material.Air then
-							redline[redline.MoveController][redline.VelocityName] += Vector3.new(0, dt * (workspace.Gravity - Value.Value), 0)
-						end
-					end))
-				end
-			end
-		end,
-		Tooltip = 'Changes the rate you fall'
-	})
-	Value = Gravity:CreateSlider({
-		Name = 'Gravity',
-		Min = 0,
-		Max = 192,
-		Default = 192
-	})
 end)
 
 run(function()
