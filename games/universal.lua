@@ -7951,7 +7951,6 @@ run(function()
 	local corner = Instance.new('UICorner')
 	corner.CornerRadius = UDim.new(0, 4)
 	corner.Parent = label
-	
 end)
 
 run(function()
@@ -7999,7 +7998,6 @@ run(function()
 	local corner = Instance.new('UICorner')
 	corner.CornerRadius = UDim.new(0, 4)
 	corner.Parent = label
-	
 end)
 
 run(function()

@@ -78,6 +78,27 @@ local redline_boxes = {
 	}
 }
 
+local function addVelocity(velo)
+	if redline[redline.MoveController] and typeof(redline[redline.MoveController][redline.LaunchpadFunction]) == 'function' then
+		local pad = Instance.new('Model')
+		local origin = Instance.new('Part')
+		origin.Name = 'Origin'
+		origin.CFrame = CFrame.new(100, 100, 100)
+		origin.Parent = pad
+		local goal = Instance.new('Part')
+		goal.Name = 'LaunchGoal'
+		goal.CFrame = CFrame.new(100, 100, 100) + (velo.Unit == velo.Unit and velo.Unit or Vector3.zero)
+		goal.Parent = pad
+		redline[redline.MoveController][redline.LaunchpadFunction](redline[redline.MoveController], pad, {
+			base_strength = velo.Magnitude,
+			max_strength = velo.Magnitude
+		})
+
+		pad:Destroy()
+		pad:ClearAllChildren()
+	end
+end
+
 local function castHitbox(data, origin)
 	local hit_hurtboxes = {}
 	local params = OverlapParams.new()
@@ -226,36 +247,13 @@ run(function()
 		return returned
 	end
 
-	entitylib.getUpdateConnections = function(entity)
-		local healthval = entity.Player:FindFirstChild('health', true)
-		local maxhealthval = entity.Player:FindFirstChild('health_max', true)
-		local connections = {
-			{
-				Connect = function()
-					entity.Friend = entity.Player and isFriend(entity.Player) or nil
-					entity.Target = entity.Player and isTarget(entity.Player) or nil
-					return {Disconnect = function() end}
-				end
-			}
-		}
-
-		if healthval and maxhealthval and healthval:IsA('IntValue') and maxhealthval:IsA('IntValue') then
-			table.insert(connections, healthval:GetPropertyChangedSignal('Value'))
-			table.insert(connections, maxhealthval:GetPropertyChangedSignal('Value'))
-		end
-
-		return connections
-	end
-
 	entitylib.addEntity = function(char, plr, teamfunc, spawntime)
 		if not char then return end
 		entitylib.EntityThreads[char] = task.spawn(function()
 			local hum = waitForChildOfType(char, 'Humanoid', 10)
 			local humrootpart = hum and waitForChildOfType(hum, 'RootPart', workspace.StreamingEnabled and 9e9 or 10, true)
 			local head = char:WaitForChild('Head', 10) or humrootpart
-			local healthval = plr:FindFirstChild('health', true)
-			local maxhealthval = plr:FindFirstChild('health_max', true)
-			local check = healthval and maxhealthval and healthval:IsA('IntValue') and maxhealthval:IsA('IntValue')
+			local hitbox = char:FindFirstChild('Head_Hurtbox', true)
 
 			if hum and humrootpart then
 				local entity = {
@@ -263,6 +261,7 @@ run(function()
 					Character = char,
 					Health = hum.Health,
 					Head = head,
+					Hitbox = hitbox or humrootpart,
 					Humanoid = hum,
 					HumanoidRootPart = humrootpart,
 					HipHeight = hum.HipHeight + (humrootpart.Size.Y / 2) + (hum.RigType == Enum.HumanoidRigType.R6 and 2 or 0),
@@ -281,18 +280,8 @@ run(function()
 				else
 					entity.Targetable = entitylib.targetCheck(entity)
 
-					if check then
-						entity.Health = healthval.Value
-						entity.MaxHealth = maxhealthval.Value
-					end
-
 					for _, v in entitylib.getUpdateConnections(entity) do
 						table.insert(entity.Connections, v:Connect(function()
-							if check then
-								entity.Health = healthval.Value
-								entity.MaxHealth = maxhealthval.Value
-							end
-
 							entitylib.Events.EntityUpdated:Fire(entity)
 						end))
 					end
@@ -468,6 +457,24 @@ run(function()
 						break
 					end
 				end
+			end,
+			LaunchpadFunction = function(constants, func, inst)
+				local found
+				for _, const in constants do
+					if const == -0.007 then
+						found = true
+					elseif const == 'augment' and found then
+						local dumpList = {}
+						for _, const in constants do
+							if tostring(const):sub(1, 2) == '_x' then
+								table.insert(dumpList, const)
+							end
+						end
+
+						redline.LaunchpadFunction = dumpList[9]
+						break
+					end
+				end
 			end
 		},
 		Protos = {
@@ -493,6 +500,33 @@ run(function()
 							end
 						end
 
+						break
+					end
+				end
+			end,
+			DashVariables = function(protos, func, inst)
+				for _, proto in protos do
+					local doBreak = false
+					local found = false
+					for _, const in debug.getconstants(proto) do
+						if const == 'onDeath' then
+							found = true
+						elseif const == 'Fire' and found then
+							doBreak = true
+						end
+					end
+
+					if doBreak then
+						local dumpList = {}
+						for _, const in debug.getconstants(proto) do
+							if tostring(const):sub(1, 2) == '_x' then
+								table.insert(dumpList, const)
+							end
+						end
+
+						redline.MoveController = dumpList[3]
+						redline.DashRecoverVariable = dumpList[4]
+						redline.DashVariable = dumpList[5]
 						break
 					end
 				end
@@ -648,9 +682,6 @@ end
 
 run(function()
 	local Reach
-	local Spoof
-	local Add
-	local oldsend, oldrepl, oldbuf
 	
 	Reach = vape.Categories.Combat:CreateModule({
 		Name = 'Reach',
@@ -913,6 +944,107 @@ run(function()
 	})
 end)
 
+local Fly
+local LongJump
+run(function()
+	local Value
+	local VerticalValue
+	local up, down = 0, 0
+
+	Fly = vape.Categories.Blatant:CreateModule({
+		Name = 'Fly',
+		Function = function(callback)
+			if callback then
+				Fly:Clean(runService.PreSimulation:Connect(function(dt)
+					addVelocity(Vector3.new(0, 3.5 + (up + down) * VerticalValue.Value, 0))
+				end))
+
+				up, down = 0, 0
+				for _, v in {'InputBegan', 'InputEnded'} do
+					Fly:Clean(inputService[v]:Connect(function(input)
+						if not inputService:GetFocusedTextBox() then
+							if input.KeyCode == Enum.KeyCode.Space then
+								up = v == 'InputBegan' and 1 or 0
+							elseif input.KeyCode == Enum.KeyCode.LeftAlt then
+								down = v == 'InputBegan' and -1 or 0
+							end
+						end
+					end))
+				end
+			end
+		end,
+		ExtraText = function()
+			return 'Redliner'
+		end,
+		Tooltip = 'Makes you go zoom.'
+	})
+	--[[Value = Fly:CreateSlider({
+		Name = 'Speed',
+		Min = 1,
+		Max = 150,
+		Default = 50,
+		Suffix = function(val)
+			return val == 1 and 'stud' or 'studs'
+		end
+	})]]
+	VerticalValue = Fly:CreateSlider({
+		Name = 'Vertical Speed',
+		Min = 1,
+		Max = 150,
+		Default = 50,
+		Suffix = function(val)
+			return val == 1 and 'stud' or 'studs'
+		end
+	})
+end)
+
+run(function()
+	local HighJump
+	local Value
+	
+	HighJump = vape.Categories.Blatant:CreateModule({
+		Name = 'HighJump',
+		Function = function(callback)
+			if callback then
+				HighJump:Toggle()
+				addVelocity(Vector3.new(0, Value.Value, 0))
+			end
+		end,
+		ExtraText = function()
+			return 'Redliner'
+		end,
+		Tooltip = 'Lets you jump higher'
+	})
+	Value = HighJump:CreateSlider({
+		Name = 'Velocity',
+		Min = 1,
+		Max = 150,
+		Default = 50,
+		Suffix = function(val)
+			return val == 1 and 'stud' or 'studs'
+		end
+	})
+end)
+
+run(function()
+	local InfiniteDash
+	
+	InfiniteDash = vape.Categories.Blatant:CreateModule({
+		Name = 'InfiniteDash',
+		Function = function(callback)
+			if callback then
+				if redline[redline.MoveController] and type(redline[redline.MoveController][redline.DashVariable]) == 'number' and type(redline[redline.MoveController][redline.DashRecoverVariable]) == 'number' then
+					InfiniteDash:Clean(runService.PreSimulation:Connect(function()
+						rawset(redline[redline.MoveController], redline.DashVariable, 3)
+						rawset(redline[redline.MoveController], redline.DashRecoverVariable, 3)
+					end))
+				end
+			end
+		end,
+		Tooltip = 'Allows you to dash infinitely.'
+	})
+end)
+
 run(function()
 	local Killaura
 	local Targets
@@ -994,7 +1126,7 @@ run(function()
 						local ent = getTarget()
 	
 						if ent then
-							local origin = CFrame.lookAt(entitylib.character.RootPart.Position + Vector3.new(0, 2, 0), ent.RootPart.Position)
+							local origin = CFrame.lookAt(entitylib.character.RootPart.Position + Vector3.new(0, 2, 0), ent.Hitbox.Position)
 							for _, box in redline_boxes do
 								if #castHitbox(box.data, origin) > 0 then
 									args[5] = origin.LookVector
@@ -1038,7 +1170,7 @@ run(function()
 						v.Parent = attacked[i] and gameCamera or nil
 					end
 	
-					task.wait(0.05)
+					task.wait(0.016)
 				until not Killaura.Enabled
 			else
 				SendHook:Remove('Killaura')
@@ -1206,7 +1338,7 @@ run(function()
 		Function = function(callback)
 			if callback then
 				AutoQueue:Clean(vapeEvents.MatchEnded.Event:Connect(function(_, obj)
-					task.delay(2, function()
+					task.defer(function()
 						firesignal(obj.Main.requeuebutton.Activated)
 					end)
 				end))
