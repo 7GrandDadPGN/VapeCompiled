@@ -7539,7 +7539,7 @@ run(function()
 			local clone = char.Character:Clone()
 			repeat
 				if pcall(function()
-					desc = playersService:GetHumanoidDescriptionFromUserId(IDBox.Value == '' and 239702688 or tonumber(IDBox.Value))
+					desc = playersService:GetHumanoidDescriptionFromUserIdAsync(IDBox.Value == '' and 239702688 or tonumber(IDBox.Value))
 				end) and desc then break end
 				task.wait(1)
 			until not Disguise.Enabled
@@ -7572,7 +7572,7 @@ run(function()
 				end
 			end
 	
-			clone.Humanoid:ApplyDescriptionClientServer(desc)
+			clone.Humanoid:ApplyDescriptionResetAsync(desc)
 			for _, v in char.Character:GetChildren() do
 				itemAdded(v)
 			end
@@ -7595,7 +7595,9 @@ run(function()
 				if v:IsA('Accessory') then
 					for _, v2 in v:GetDescendants() do
 						if v2:IsA('Weld') and v2.Part1 then
-							v2.Part1 = char.Character[v2.Part1.Name]
+							v2.Part1 = char[v2.Part1.Name]
+						elseif v2:IsA('RigidConstraint') then
+							v2.Attachment1 = char.Character:FindFirstChild(v2.Attachment1.Name, true)
 						end
 					end
 					v.Parent = char.Character
