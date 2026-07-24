@@ -41,6 +41,7 @@ local inputService = cloneref(game:GetService('UserInputService'))
 local tweenService = cloneref(game:GetService('TweenService'))
 local lightingService = cloneref(game:GetService('Lighting'))
 local marketplaceService = cloneref(game:GetService('MarketplaceService'))
+local proxService = cloneref(game:GetService('ProximityPromptService'))
 local teleportService = cloneref(game:GetService('TeleportService'))
 local httpService = cloneref(game:GetService('HttpService'))
 local guiService = cloneref(game:GetService('GuiService'))
@@ -1833,37 +1834,6 @@ run(function()
 	})
 end)
 
-run(function()
-	local Desync
-	local hook
-	
-	Desync = vape.Categories.Blatant:CreateModule({
-		Name = 'Desync',
-		Function = function(callback)
-			if callback then
-				if not rakNetCheck('Desync') then
-					Desync:Toggle()
-					return
-				end
-	
-				hook = function(packet)
-					if packet.AsArray[1] == 0x1b then
-						local data = packet.AsBuffer
-						buffer.writeu32(data, 1, 0xFFFFFFFF)
-						packet:SetData(data)
-					end
-				end
-	
-				raknet.add_send_hook(hook)
-			elseif hook then
-				raknet.remove_send_hook(hook)
-				hook = nil
-			end
-		end,
-		Tooltip = 'Prevent the server from replicating your current position to other players.'
-	})
-end)
-
 local Fly
 local LongJump
 run(function()
@@ -3332,7 +3302,7 @@ run(function()
 				Truss.Parent = Spider.Enabled and gameCamera or nil
 			end
 		end,
-		Tooltip = 'Velocity - Uses smooth movement to boost you upward\nCFrame - Directly adjusts the position upward\nPart - Positions a climbable part infront of you'
+		Tooltip = 'Velocity - Uses smooth movement to boost you upward\nImpulse - Same as velocity while using forces instead\nCFrame - Directly adjusts the position upward\nPart - Positions a climbable part infront of you'
 	})
 	Value = Spider:CreateSlider({
 		Name = 'Speed',
@@ -3401,7 +3371,8 @@ run(function()
 				AngularVelocity = nil
 			end
 			AngularVelocity = val == 'BodyMover' and Instance.new('BodyAngularVelocity') or nil
-		end
+		end,
+		Tooltip = 'CFrame - Directly adjusts your characters angle\nRotVelocity - Sets the rotation velocity so that you spin\nBodyMover - Uses body movers to edit your rotation velocity'
 	})
 	Value = SpinBot:CreateSlider({
 		Name = 'Speed',
@@ -6724,6 +6695,89 @@ run(function()
 end)
 
 run(function()
+	local FastProxPrompt
+	local Mode
+	local Value
+	local modified = {}
+	local thread
+	
+	FastProxPrompt = vape.Categories.World:CreateModule({
+		Name = 'FastProxPrompt',
+		Function = function(callback)
+			if callback then
+				if Mode.Value == 'Signal' then
+					FastProxPrompt:Clean(proxService.PromptButtonHoldBegan:Connect(function(prompt, plr)
+						if plr == lplr then
+							thread = task.delay(prompt.HoldDuration * (Value.Value / 100), function()
+								fireproximityprompt(prompt)
+								thread = nil
+							end)
+						end
+					end))
+	
+					FastProxPrompt:Clean(proxService.PromptButtonHoldEnded:Connect(function(prompt, plr)
+						if plr == lplr and thread then
+							task.cancel(thread)
+							thread = nil
+						end
+					end))
+				else
+					FastProxPrompt:Clean(proxService.PromptShown:Connect(function(prompt)
+						if not modified[prompt] then
+							modified[prompt] = prompt.HoldDuration
+						end
+	
+						prompt.HoldDuration = modified[prompt] * (Value.Value / 100)
+					end))
+	
+					FastProxPrompt:Clean(proxService.PromptHidden:Connect(function(prompt)
+						if modified[prompt] then
+							prompt.HoldDuration = modified[prompt]
+							modified[prompt] = nil
+						end
+					end))
+				end
+			else
+				if thread then
+					task.cancel(thread)
+					thread = nil
+				end
+	
+				for i, v in modified do
+					i.HoldDuration = v
+				end
+	
+				table.clear(modified)
+			end
+		end,
+		Tooltip = 'Allow you to adjust the HoldDuration time of a ProximityPrompt'
+	})
+	Mode = FastProxPrompt:CreateDropdown({
+		Name = 'Mode',
+		List = {'Signal', 'Property'},
+		Tooltip = 'Signal - Uses fireproximityprompt after the calculated delay\nProperty - Sets the HoldDuration property',
+		Function = function()
+			if FastProxPrompt.Enabled then
+				FastProxPrompt:Toggle()
+				FastProxPrompt:Toggle()
+			end
+		end
+	})
+	Value = FastProxPrompt:CreateSlider({
+		Name = 'Modifier',
+		Min = 0,
+		Max = 100,
+		Default = 50,
+		Suffix = '%',
+		Function = function(val)
+			for i, v in modified do
+				i.HoldDuration = v * (val / 100)
+			end
+		end
+	})
+end)
+
+run(function()
 	local Freecam
 	local Value
 	local randomkey, module, old = httpService:GenerateGUID(false)
@@ -6919,6 +6973,67 @@ run(function()
 			end
 		end,
 		Tooltip = 'Prevents you from walking off the edge of parts'
+	})
+end)
+
+run(function()
+	local Wallhop
+	local params = OverlapParams.new()
+	params.RespectCanCollide = true
+	local oldvec
+	local timeout = os.clock()
+	local set
+	
+	local function doCheck()
+		if set then
+			gameCamera.CFrame = CFrame.new(gameCamera.CFrame.Position.X, gameCamera.CFrame.Position.Y, gameCamera.CFrame.Position.Z, unpack(set, 4, set.n))
+			set = nil
+		end
+	
+		local hum = entitylib.isAlive and entitylib.character.Humanoid
+		if hum and hum.Jump and hum.MoveDirection.Magnitude > 0 then
+			local root = entitylib.character.RootPart
+			params.CollisionGroup = root.CollisionGroup
+			params.FilterDescendantsInstances = {lplr.Character}
+	
+			if root.AssemblyLinearVelocity.Y < 0 and hum.FloorMaterial == Enum.Material.Air then
+				local feet = root.Position
+				local parts = workspace:GetPartBoundsInBox(CFrame.new(root.Position - Vector3.new(0, entitylib.character.HipHeight / 2, 0)), Vector3.new(3, entitylib.character.HipHeight, 3), params)
+				local doHop = false
+	
+				for _, v in parts do
+					local pos = v:GetClosestPointOnSurface(root.Position)
+					local diff = (root.Position.Y - pos.Y)
+	
+					if diff > root.Size.Y / 2 then
+						doHop = true
+						break
+					end
+				end
+	
+				if doHop and (os.clock() - timeout) > 0.2 then
+					set = table.pack(gameCamera.CFrame:GetComponents())
+					gameCamera.CFrame *= CFrame.Angles(0, math.rad(45), 0)
+					timeout = os.clock()
+				end
+			end
+		end
+	end
+	
+	Wallhop = vape.Categories.World:CreateModule({
+		Name = 'Wallhop',
+		Function = function(callback)
+			if callback then
+				if workspace.AuthorityMode == Enum.AuthorityMode.Server then
+					Wallhop:Clean(runService:BindToSimulation(doCheck))
+				else
+					Wallhop:Clean(runService.RenderStepped:Connect(doCheck))
+				end
+			else
+				set = nil
+			end
+		end,
+		Tooltip = 'Automatically rotates camera for wallhopping.'
 	})
 end)
 
@@ -7517,148 +7632,107 @@ run(function()
 	local Disguise
 	local Mode
 	local IDBox
-	local desc
+	local cloned = {}
 	
-	local function itemAdded(v, manual)
-		if (not v:GetAttribute('Disguise')) and ((v:IsA('Accessory') and (not v:GetAttribute('InvItem')) and (not v:GetAttribute('ArmorSlot'))) or v:IsA('ShirtGraphic') or v:IsA('Shirt') or v:IsA('Pants') or v:IsA('BodyColors') or manual) then
-			repeat
-				task.wait()
-				v.Parent = game
-			until v.Parent == game
-	
-			v:ClearAllChildren()
-			v:Destroy()
+	local function itemAdded(obj, manual)
+		if (obj:IsA('Accessory') or obj:IsA('ShirtGraphic') or obj:IsA('Shirt') or obj:IsA('Pants') or obj:IsA('BodyColors') or manual) and not cloned[obj] then
+			obj:ClearAllChildren()
+			task.defer(obj.Destroy, obj)
 		end
 	end
 	
-	local function characterAdded(char)
+	local function localAdded(char)
+		table.clear(cloned)
 		if Mode.Value == 'Character' then
-			task.wait(0.1)
-			char.Character.Archivable = true
+			local success, description = pcall(function()
+				return playersService:GetHumanoidDescriptionFromUserId(IDBox.Value == '' and 239702688 or tonumber(IDBox.Value))
+			end)
 	
-			local clone = char.Character:Clone()
-			repeat
-				if pcall(function()
-					desc = playersService:GetHumanoidDescriptionFromUserIdAsync(IDBox.Value == '' and 239702688 or tonumber(IDBox.Value))
-				end) and desc then break end
-				task.wait(1)
-			until not Disguise.Enabled
+			if success and Disguise.Enabled then
+				char.Character.Archivable = true
+				local clone = char.Character:Clone()
+				clone.Parent = game
 	
-			if not Disguise.Enabled then
+				local original = char.Humanoid:WaitForChild('HumanoidDescription', 2) or {
+					HeightScale = 1,
+					SetEmotes = function() end,
+					SetEquippedEmotes = function() end
+				}
+	
+				original.JumpAnimation = description.JumpAnimation
+				description.HeightScale = original.HeightScale
+				clone:FindFirstChildWhichIsA('Humanoid'):ApplyDescriptionResetAsync(description)
+	
+				Disguise:Clean(char.Character.ChildAdded:Connect(itemAdded))
+				for _, obj in char.Character:GetChildren() do
+					itemAdded(obj)
+				end
+	
+				for _, obj in clone:GetChildren() do
+					cloned[obj] = true
+					if obj:IsA('Accessory') then
+						for _, objd in obj:GetDescendants() do
+							if objd:IsA('Weld') and objd.Part1 then
+								objd.Part1 = char.Character:FindFirstChild(objd.Part1.Name)
+							elseif objd:IsA('RigidConstraint') then
+								objd.Attachment1 = char.Character:FindFirstChild(objd.Attachment1.Name, true)
+							end
+						end
+	
+						obj.Parent = char.Character
+					elseif obj:IsA('ShirtGraphic') or obj:IsA('Shirt') or obj:IsA('Pants') or obj:IsA('BodyColors') then
+						obj.Parent = char.Character
+					elseif obj.Name == 'Head' and char.Head:IsA('MeshPart') and (not char.Head:FindFirstChild('FaceControls')) then
+						char.Head.MeshId = obj.MeshId
+					end
+				end
+	
+				local face = char.Character:FindFirstChild('face', true)
+				local cface = clone:FindFirstChild('face', true)
+	
+				if face then
+					itemAdded(face, true)
+				end
+	
+				if cface then
+					cface.Parent = char.Head
+				end
+	
+				original:SetEmotes(description:GetEmotes())
+				original:SetEquippedEmotes(description:GetEquippedEmotes())
+				description:Destroy()
 				clone:ClearAllChildren()
 				clone:Destroy()
-				clone = nil
-				if desc then
-					desc:Destroy()
-					desc = nil
-				end
-				return
-			end
-	
-			clone.Parent = game
-	
-			local originalDesc = char.Humanoid:WaitForChild('HumanoidDescription', 2) or {
-				HeightScale = 1,
-				SetEmotes = function() end,
-				SetEquippedEmotes = function() end
-			}
-			originalDesc.JumpAnimation = desc.JumpAnimation
-			desc.HeightScale = originalDesc.HeightScale
-	
-			for _, v in clone:GetChildren() do
-				if v:IsA('Accessory') or v:IsA('ShirtGraphic') or v:IsA('Shirt') or v:IsA('Pants') then
-					v:ClearAllChildren()
-					v:Destroy()
-				end
-			end
-	
-			clone.Humanoid:ApplyDescriptionResetAsync(desc)
-			for _, v in char.Character:GetChildren() do
-				itemAdded(v)
-			end
-			Disguise:Clean(char.Character.ChildAdded:Connect(itemAdded))
-	
-			for _, v in clone:WaitForChild('Animate'):GetChildren() do
-				if not char.Character:FindFirstChild('Animate') then return end
-				local real = char.Character.Animate:FindFirstChild(v.Name)
-				if v and real then
-					local anim = v:FindFirstChildWhichIsA('Animation') or {AnimationId = ''}
-					local realanim = real:FindFirstChildWhichIsA('Animation') or {AnimationId = ''}
-					if realanim then
-						realanim.AnimationId = anim.AnimationId
-					end
-				end
-			end
-	
-			for _, v in clone:GetChildren() do
-				v:SetAttribute('Disguise', true)
-				if v:IsA('Accessory') then
-					for _, v2 in v:GetDescendants() do
-						if v2:IsA('Weld') and v2.Part1 then
-							v2.Part1 = char[v2.Part1.Name]
-						elseif v2:IsA('RigidConstraint') then
-							v2.Attachment1 = char.Character:FindFirstChild(v2.Attachment1.Name, true)
-						end
-					end
-					v.Parent = char.Character
-				elseif v:IsA('ShirtGraphic') or v:IsA('Shirt') or v:IsA('Pants') or v:IsA('BodyColors') then
-					v.Parent = char.Character
-				elseif v.Name == 'Head' and char.Head:IsA('MeshPart') and (not char.Head:FindFirstChild('FaceControls')) then
-					char.Head.MeshId = v.MeshId
-				end
-			end
-	
-			local localface = char.Character:FindFirstChild('face', true)
-			local cloneface = clone:FindFirstChild('face', true)
-			if localface and cloneface then
-				itemAdded(localface, true)
-				cloneface.Parent = char.Head
-			end
-			originalDesc:SetEmotes(desc:GetEmotes())
-			originalDesc:SetEquippedEmotes(desc:GetEquippedEmotes())
-			clone:ClearAllChildren()
-			clone:Destroy()
-			clone = nil
-	
-			if desc then
-				desc:Destroy()
-				desc = nil
+			elseif description then
+				description:Destroy()
 			end
 		else
-			local data
-			repeat
-				if pcall(function()
-					data = marketplaceService:GetProductInfo(IDBox.Value == '' and 43 or tonumber(IDBox.Value), Enum.InfoType.Bundle)
-				end) then break end
-				task.wait(1)
-			until not Disguise.Enabled
+			local success, data = pcall(function()
+				data = marketplaceService:GetProductInfo(IDBox.Value == '' and 43 or tonumber(IDBox.Value), Enum.InfoType.Bundle)
+			end)
 	
-			if not Disguise.Enabled then
-				if data then
-					table.clear(data)
-					data = nil
-				end
-				return
-			end
+			if success and Disguise.Enabled then
+				if data.BundleType == 'AvatarAnimations' then
+					local animate = char.Character:FindFirstChild('Animate')
+					if not animate then return end
 	
-			if data.BundleType == 'AvatarAnimations' then
-				local animate = char.Character:FindFirstChild('Animate')
-				if not animate then return end
+					for _, item in desc.Items do
+						local itemtype = item.Name:split(' ')[2]:lower()
+						if itemtype ~= 'animation' then
+							local suc, obj = pcall(function()
+								return game:GetObjects('rbxassetid://'..item.Id)
+							end)
 	
-				for _, v in desc.Items do
-					local animtype = v.Name:split(' ')[2]:lower()
-					if animtype ~= 'animation' then
-						local suc, res = pcall(function()
-							return game:GetObjects('rbxassetid://'..v.Id)
-						end)
-	
-						if suc then
-							animate[animtype]:FindFirstChildWhichIsA('Animation').AnimationId = res[1]:FindFirstChildWhichIsA('Animation', true).AnimationId
+							if suc then
+								animate[itemtype]:FindFirstChildWhichIsA('Animation').AnimationId = obj[1]:FindFirstChildWhichIsA('Animation', true).AnimationId
+							end
 						end
 					end
+				else
+					notif('Disguise', 'that\'s not an animation pack', 5, 'warning')
 				end
-			else
-				notif('Disguise', 'that\'s not an animation pack', 5, 'warning')
+			elseif type(data) == 'table' then
+				table.clear(data)
 			end
 		end
 	end
@@ -7667,10 +7741,12 @@ run(function()
 		Name = 'Disguise',
 		Function = function(callback)
 			if callback then
-				Disguise:Clean(entitylib.Events.LocalAdded:Connect(characterAdded))
+				Disguise:Clean(entitylib.Events.LocalAdded:Connect(localAdded))
 				if entitylib.isAlive then
-					characterAdded(entitylib.character)
+					task.spawn(localAdded, entitylib.character)
 				end
+			else
+				table.clear(cloned)
 			end
 		end,
 		Tooltip = 'Changes your character or animation to a specific ID (animation packs or userid\'s only)'

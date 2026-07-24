@@ -842,7 +842,10 @@ run(function()
 		end,
 		Tooltip = 'Silently adjusts your aim towards the enemy'
 	})
-	Target = SilentAim:CreateTargets({Players = true})
+	Target = SilentAim:CreateTargets({
+		Players = true,
+		Walls = true
+	})
 	Mode = SilentAim:CreateDropdown({
 		Name = 'Mode',
 		List = {'Mouse', 'Position'},
@@ -886,7 +889,8 @@ run(function()
 		Function = function(callback)
 			AutoFireRate.Object.Visible = callback
 			AutoFireTaser.Object.Visible = callback
-		end
+		end,
+		Tooltip = 'Automatically fires guns when the specified target conditions are met.'
 	})
 	AutoFireRate = SilentAim:CreateSlider({
 		Name = 'Update rate',
@@ -902,7 +906,10 @@ run(function()
 		Visible = false,
 		Darker = true
 	})
-	Wallbang = SilentAim:CreateToggle({Name = 'Wallbang'})
+	Wallbang = SilentAim:CreateToggle({
+		Name = 'Wallbang',
+		Tooltip = 'Allow you to shoot people through walls when specific conditions are met.\n(If the entity has a valid hitbox position exposed or if the shoot position can be moved past walls (eg hugging walls))'
+	})
 	SilentAim:CreateToggle({
 		Name = 'Range Circle',
 		Function = function(callback)
@@ -959,6 +966,76 @@ run(function()
 		end,
 		Darker = true,
 		Visible = false
+	})
+end)
+
+run(function()
+	local TriggerBot
+	local Targets
+	local rayParams = RaycastParams.new()
+	rayParams.CollisionGroup = 'ClientBullet'
+	rayParams.FilterType = Enum.RaycastFilterType.Exclude
+	
+	local function getTriggerBotTarget()
+		rayParams.FilterDescendantsInstances = {lplr.Character}
+		if entitylib.isAlive then
+			local tool = debug.getupvalue(oldshoot or pl.Shoot, 1)
+			local data = debug.getupvalue(oldshoot or pl.Shoot, 10)
+	
+			if tool and data and data.Range then
+				local posX, posY
+				if inputService.MouseBehavior == Enum.MouseBehavior.LockCenter then
+					posX = gameCamera.ViewportSize.X / 2
+					posY = gameCamera.ViewportSize.Y / 2
+				else
+					local location = inputService:GetMouseLocation()
+					posX = location.X
+					posY = location.Y
+				end
+	
+				local hitPos
+				local rayPos = gameCamera:ViewportPointToRay(posX, posY)
+				local ray = workspace:Raycast(rayPos.Origin, rayPos.Direction * 1500, rayParams)
+				local vEntity
+	
+				for _, entity in entitylib.List do
+					if entity.Targetable and entity.Character and (Targets.Players.Enabled and entity.Player or Targets.NPCs.Enabled and entity.NPC) and entitylib.isVulnerable(entity, true) and ray.Instance:IsDescendantOf(entity.Character) then
+						vEntity = entity
+						break
+					end
+				end
+	
+				if vEntity then
+					local origin = entitylib.character.Head.Position
+					local hitCheck = workspace:Raycast(origin, (ray.Position - origin), rayCheck)
+					if hitCheck and hitCheck.Instance:IsDescendantOf(vEntity.Character) and (ray.Position - origin).Magnitude <= data.Range then
+						return vEntity
+					end
+				end
+			end
+		end
+	end
+	
+	TriggerBot = vape.Categories.Combat:CreateModule({
+		Name = 'TriggerBot',
+		Function = function(callback)
+			if callback then
+				repeat
+					if getTriggerBotTarget() then
+						local obj = {UserInputState = Enum.UserInputState.Begin, UserInputType = Enum.UserInputType.MouseButton1, Position = Vector3.zero}
+						task.spawn(pl.Shoot, obj)
+						obj.UserInputState = Enum.UserInputState.End
+					end
+	
+					task.wait()
+				until not TriggerBot.Enabled
+			end
+		end,
+		Tooltip = 'Shoots people that enter your crosshair'
+	})
+	Targets = TriggerBot:CreateTargets({
+		Players = true,
+		NPCs = true
 	})
 end)
 
@@ -1061,7 +1138,7 @@ run(function()
 				table.clear(threads)
 			end
 		end,
-		Tooltip = 'Prevent people from using invisible animations'
+		Tooltip = 'Prevent people from using animations outside of the game\'s scope'
 	})
 end)
 
@@ -1072,22 +1149,20 @@ run(function()
 		Name = 'AntiKillPlane',
 		Function = function(callback)
 			if callback then
-				for x = -2048, 2048, 2048 do
-					for z = -2048, 2048, 2048 do
-						local part = Instance.new('Part')
-						part.CanQuery = false
-						part.CanCollide = true
-						part.Anchored = true
-						part.Transparency = 1
-						part.Size = Vector3.new(2048, 10, 2048)
-						part.Position = Vector3.new(x, 170, z)
-						part.Parent = workspace
-						AntiKillPlane:Clean(part)
+				AntiKillPlane:Clean(runService.Heartbeat:Connect(function()
+					if entitylib.isAlive then
+						local root = entitylib.character.RootPart
+						local diff = math.min(root.Position.Y, 179.99) - root.Position.Y
+						root.CFrame += Vector3.new(0, diff, 0)
+	
+						if math.abs(diff) > 0 and root.AssemblyLinearVelocity.Y > 0 then
+							root.AssemblyLinearVelocity *= Vector3.new(1, 0, 1)
+						end
 					end
-				end
+				end))
 			end
 		end,
-		Tooltip = 'Add\'s a phyiscal part for the kill plane'
+		Tooltip = 'Prevents you from touching the kill plane'
 	})
 end)
 
@@ -1341,11 +1416,11 @@ run(function()
 								Players = true
 							})
 	
-							for _, ent in entities do 
+							for _, ent in entities do
 								if not (ent.Character:GetAttribute('Tased') or ent.Character:GetAttribute('Arrested')) then
 									cooldown = os.clock() + 2
 									local equipped = lplr.Character:FindFirstChildWhichIsA('Tool')
-									if equipped then 
+									if equipped then
 										equipped.Parent = backpack
 									end
 	
@@ -1360,7 +1435,7 @@ run(function()
 				until not AutoTaser.Enabled
 			end
 		end,
-		Tooltip = 'Only works with silentaim autofire with position mode.'
+		Tooltip = 'Automatically taze people around you. (only works with SilentAim AutoFire with Position Mode enabled)'
 	})
 	Range = AutoTaser:CreateSlider({
 		Name = 'Range',
@@ -1443,7 +1518,7 @@ run(function()
 				end
 			end
 		end,
-		Tooltip = 'Modifications to empower the firearm'
+		Tooltip = 'Apply various modifications to enhance any firearm'
 	})
 	FireRate = GunModifications:CreateSlider({
 		Name = 'FireRate Multiplier',
@@ -1460,77 +1535,6 @@ run(function()
 	Automatic = GunModifications:CreateToggle({
 		Name = 'Full Automatic',
 		Function = Modify
-	})
-end)
-
-run(function()
-	local KickAll
-	
-	KickAll = vape.Categories.Blatant:CreateModule({
-		Name = 'KickAll',
-		Function = function(callback)
-			if callback then
-				local cf = {}
-				local flingtimes = {}
-				local flingcooldown = {}
-				KickAll:Clean(runService.Heartbeat:Connect(function()
-					local seat = entitylib.isAlive and entitylib.character.Humanoid.SeatPart
-					if not (seat and seat:IsDescendantOf(workspace.CarContainer) and seat.Name == 'VehicleSeat') then
-						notif('KickAll', 'Vehicle required!', 10)
-						KickAll:Toggle()
-						return
-					end
-	
-					local wheelIndex = 1
-					local wheels = seat.Parent.Parent.Wheels:QueryDescendants('Rotate')
-					local targets = table.clone(entitylib.List)
-	
-					table.sort(targets, function(a, b)
-						return (a.RootPart.Position - seat.Position).Magnitude < (b.RootPart.Position - seat.Position).Magnitude
-					end)
-	
-					for _, entity in targets do
-						if (os.clock() - entity.SpawnTime) > 5 and entity.Health > 0 and entity.Humanoid:GetState() ~= Enum.HumanoidStateType.Dead and select(2, whitelist:get(entity.Player)) and not (entity.Humanoid.SeatPart and entity.Humanoid.SeatPart.Anchored) and entity.RootPart.AssemblyLinearVelocity.Magnitude < 60 then
-							local wheel = wheels[wheelIndex]
-							if not wheel then
-								break
-							end
-	
-							if not cf[wheel] then
-								cf[wheel] = wheel.Part1.CFrame
-							end
-	
-							local target = entity.Humanoid.Torso or entity.RootPart
-							sethiddenproperty(wheel.Part0, 'PhysicsRepRootPart', entity.RootPart)
-							wheel.Part0.CFrame = CFrame.new(target.Position) * CFrame.Angles(0, math.rad(90), 0)
-							wheel.Part1.CFrame = cf[wheel]
-							wheel.Part0.AssemblyLinearVelocity = Vector3.new(50, 0, 0)
-							wheel.Part0.AssemblyAngularVelocity = Vector3.zero
-							wheel.Part1.AssemblyLinearVelocity = Vector3.zero
-							wheel.Part1.AssemblyAngularVelocity = Vector3.zero
-	
-							wheelIndex += 1
-						end
-					end
-	
-					for i = 1, #wheels - wheelIndex do
-						local wheel = wheels[wheelIndex]
-						if cf[wheel] then
-							wheel.Part0.CFrame = cf[wheel]
-							wheel.Part1.CFrame = cf[wheel]
-						end
-	
-						wheel.Part0.AssemblyLinearVelocity = Vector3.zero
-						wheel.Part0.AssemblyAngularVelocity = Vector3.zero
-						wheel.Part1.AssemblyLinearVelocity = Vector3.zero
-						wheel.Part1.AssemblyAngularVelocity = Vector3.zero
-					end
-	
-					table.clear(targets)
-				end))
-			end
-		end,
-		Tooltip = 'kick everyone in the server'
 	})
 end)
 
@@ -1825,7 +1829,7 @@ run(function()
 				end
 			end
 		end,
-		Tooltip = 'Remove the cooldown from jumping'
+		Tooltip = 'Remove the stamina cooldown from jumping'
 	})
 end)
 
@@ -2364,7 +2368,7 @@ run(function()
 				end))
 			end
 		end,
-		Tooltip = 'Says a message after a certain action'
+		Tooltip = 'Says a message after a cheater gets kicked with CheatDetector enabled.'
 	})
 	for _, v in {'Kicked'} do
 		Cloned[v] = {}
@@ -2474,11 +2478,11 @@ run(function()
 				CheatFlags:Clear()
 			end
 		end,
-		Tooltip = 'Alerts for any possible cheaters.'
+		Tooltip = 'Sends alerts for any possible cheaters.'
 	})
 	AddTarget = CheatDetector:CreateToggle({
 		Name = 'Temporary Target',
-		Tooltip = 'Add temporary priority for cheaters.',
+		Tooltip = 'Add temporary combat module priority for cheaters.',
 		Default = true
 	})
 end)
@@ -2911,6 +2915,24 @@ run(function()
 	local thealth, ttimer = 0, 0
 	local indi, indipart, indithread
 	
+	-- completely skidded from RIVALS
+	local function renderStepForLoop(startVal, endVal, increment, callback)
+		while true do
+			if endVal >= startVal then
+				if callback(startVal) then
+					return
+				else
+					local diff = tick()
+					runService.RenderStepped:Wait()
+					startVal = startVal + increment * (tick() - diff) * 60
+				end
+			else
+				callback(endVal)
+				return
+			end
+		end
+	end
+	
 	local function createIndicator(damage, pos)
 		if indithread then
 			task.cancel(indithread)
@@ -2926,13 +2948,15 @@ run(function()
 			indipart.Parent = workspace
 			local billboard = Instance.new('BillboardGui')
 			billboard.Adornee = indipart
-			billboard.Size = UDim2.fromOffset(30, 30)
+			billboard.Size = UDim2.new(15, 250, 15, 250)
 			billboard.AlwaysOnTop = true
 			billboard.Parent = indipart
 			indi = Instance.new('TextLabel')
 			indi.BackgroundTransparency = 1
 			indi.TextStrokeTransparency = 0
-			indi.Size = UDim2.fromScale(1, 1)
+			indi.Size = UDim2.fromScale(1, 0.075)
+			indi.Position = UDim2.fromScale(0.5, 0.5)
+			indi.AnchorPoint = Vector2.new(0.5, 0.5)
 			indi.Text = math.ceil(damage)
 			indi.TextColor3 = Color3.fromHSV(ColorV.Hue, ColorV.Sat, ColorV.Value)
 			indi.TextScaled = true
@@ -2940,7 +2964,24 @@ run(function()
 			indi.Parent = billboard
 		end
 	
-		indithread = task.delay(1, function()
+		if indithread then
+			task.cancel(indithread)
+			indithread = nil
+		end
+	
+		-- completely skidded from RIVALS
+		indithread = task.spawn(function()
+			local sign = math.sign(math.random() - 0.5)
+			renderStepForLoop(0, 100, 3, function(value)
+				local percent = value / 100
+				local val0 = tweenService:GetValue(percent, Enum.EasingStyle.Sine, Enum.EasingDirection.In)
+				local val1 = tweenService:GetValue(percent, Enum.EasingStyle.Back, Enum.EasingDirection.In)
+				local scale = 1 - 0.5 * val1
+				indi.Position = UDim2.new(0.5 + 0.125 * val0 * sign, 0, 0.5 + 0.125 * val1, 0)
+				indi.Size = UDim2.new(1 * scale, 0, 0.075 * scale * (v197 and 1 or 0.75), 0)
+				indi.Rotation = percent ^ 4 * 260 * sign
+			end)
+	
 			indipart:Destroy()
 			indipart = nil
 			indithread = nil
