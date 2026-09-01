@@ -6092,7 +6092,7 @@ run(function()
 	artist.TextXAlignment = Enum.TextXAlignment.Left
 	artist.Parent = holder
 	local progress = Instance.new('Frame')
-	progress.BackgroundColor3 = Color3.fromRGB(70, 70, 70)
+	progress.BackgroundColor3 = Color3.fromRGB(26, 25, 26)
 	progress.Position = UDim2.fromOffset(6, 43)
 	progress.Size = UDim2.new(1, -46, 0, 4)
 	progress.Parent = holder
@@ -6204,7 +6204,7 @@ run(function()
 				local currentTime = (data.timestamp / 1000)
 				local posAsTime = tonumber(data.player_state.position_as_of_timestamp) / 1000
 				local diff = currentTime - (tonumber(data.player_state.timestamp) / 1000)
-				self.playPosition = posAsTime + diff
+				self.playPosition = posAsTime + (data.player_state.is_paused and 0 or diff)
 				self.playRate = data.player_state.playback_speed
 				self.playDuration = tonumber(data.player_state.duration) / 1000
 	
@@ -6314,7 +6314,7 @@ run(function()
 			if not self.Cache[id] then
 				self.Cache[id] = {Artists = {'None'}}
 	
-				if self.Data.fetchKey then
+				if self.Data.fetchKey and not id:find('spotify:local') then
 					task.spawn(function()
 						local dataRequest = safeRequest({
 							Url = 'https://api-partner.spotify.com/pathfinder/v2/query',
@@ -6344,12 +6344,17 @@ run(function()
 	
 						if dataRequest.Success then
 							local data = httpService:JSONDecode(dataRequest.Body)
+							local track = data.data.lookup[1]
 	
-							if data.data.lookup[1] then
+							if track and track.data then
 								table.clear(self.Cache[id].Artists)
 	
-								for _, artist in data.data.lookup[1].data.artists.items do
-									table.insert(self.Cache[id].Artists, artist.profile.name)
+								if track.data.__typename == 'Track' then
+									for _, artist in track.data.artists.items do
+										table.insert(self.Cache[id].Artists, artist.profile.name)
+									end
+								elseif track.data.__typename == 'Episode' then
+									table.insert(self.Cache[id].Artists, track.data.podcastV2.data.publisher.name)
 								end
 	
 								if self.track == id then
@@ -6450,6 +6455,8 @@ run(function()
 	
 					if registerReq.Success then
 						self:Callback(httpService:JSONDecode(registerReq.Body))
+					else
+						notif('Spotify', 'Failed to register device: '..registerReq.Body, 30, 'alert')
 					end
 				else
 					notif('Spotify', 'Failed to register device: '..deviceReq.Body, 30, 'alert')
@@ -6530,12 +6537,15 @@ run(function()
 			if data.expireTime > os.time() then
 				self.Data = data
 			else
+				notif('Spotify', 'Authenticating...', 10, 'info')
+	
 				local success
 				success, data = pcall(function()
 					return self:Refresh()
 				end)
 	
 				if success then
+					notif('Spotify', 'Logged in!', 10, 'info')
 					writefile('newvape/profiles/spotifydata.txt', httpService:JSONEncode(data))
 					self.Data = data
 				else
@@ -6561,7 +6571,7 @@ run(function()
 			local pingCooldown = os.clock() + 30
 	
 			repeat
-				task.wait(1)
+				local delta = task.wait(0.1)
 	
 				if self.Socket then
 					if self.syncTime and (os.clock() - self.syncTime) > 10 then
@@ -6576,8 +6586,8 @@ run(function()
 					end
 	
 					if self.playPosition then
-						self.playPosition = math.clamp(self.playPosition + self.playRate, 0.01, self.playDuration)
-						duration.Text = (self.playPosition // 60)..':'..string.format('%02i', (self.playPosition // 1) % 60)
+						self.playPosition = math.clamp(self.playPosition + (delta * self.playRate), 0.01, self.playDuration)
+						duration.Text = (self.playPosition // 60)..':'..string.format('%02i', self.playPosition % 60)
 						fill.Size = UDim2.fromScale(self.playPosition / self.playDuration, 1)
 					end
 				end
@@ -6899,32 +6909,33 @@ run(function()
 	local IDBox
 	local Priority
 	local Speed
-	local anim, animobject
+	local NoFetch
+	local track, anim
 	
 	local function playAnimation(char)
-		local animcheck = anim
+		local animcheck = track
 		if animcheck then
-			anim = nil
+			track = nil
 			animcheck:Stop()
 		end
 	
-		local suc, res = pcall(function()
-			anim = char.Humanoid.Animator:LoadAnimation(animobject)
+		local success, result = pcall(function()
+			track = char.Humanoid.Animator:LoadAnimation(anim)
 		end)
 	
-		if suc then
-			local currentanim = anim
-			anim.Priority = Enum.AnimationPriority[Priority.Value]
-			anim:Play()
-			anim:AdjustSpeed(Speed.Value)
+		if success then
+			local currentanim = track
+			track.Priority = Enum.AnimationPriority[Priority.Value]
+			track:Play()
+			track:AdjustSpeed(Speed.Value)
 	
-			AnimationPlayer:Clean(anim.Stopped:Connect(function()
-				if currentanim == anim then
-					anim:Play()
+			AnimationPlayer:Clean(track.Stopped:Connect(function()
+				if currentanim == track then
+					track:Play()
 				end
 			end))
 		else
-			notif('AnimationPlayer', 'failed to load anim : '..(res or 'invalid animation id'), 5, 'warning')
+			notif('AnimationPlayer', 'failed to load anim : '..(result or 'invalid animation id'), 5, 'warning')
 		end
 	end
 	
@@ -6933,21 +6944,25 @@ run(function()
 		Function = function(callback)
 			if callback then
 				local success, id = pcall(function()
+					if NoFetch.Enabled then
+						return
+					end
+	
 					return string.match(game:GetObjects('rbxassetid://'..IDBox.Value)[1].AnimationId, '%?id=(%d+)')
 				end)
 	
-				animobject = Instance.new('Animation')
-				animobject.AnimationId = 'rbxassetid://'..(success and id or IDBox.Value)
+				anim = Instance.new('Animation')
+				anim.AnimationId = 'rbxassetid://'..(success and id or IDBox.Value)
 	
 				if entitylib.isAlive then
 					playAnimation(entitylib.character)
 				end
 	
 				AnimationPlayer:Clean(entitylib.Events.LocalAdded:Connect(playAnimation))
-				AnimationPlayer:Clean(animobject)
+				AnimationPlayer:Clean(anim)
 			else
-				if anim then
-					anim:Stop()
+				if track then
+					track:Stop()
 				end
 			end
 		end,
@@ -6973,21 +6988,26 @@ run(function()
 		Name = 'Priority',
 		List = prio,
 		Function = function(val)
-			if anim then
-				anim.Priority = Enum.AnimationPriority[val]
+			if track then
+				track.Priority = Enum.AnimationPriority[val]
 			end
 		end
 	})
 	Speed = AnimationPlayer:CreateSlider({
 		Name = 'Speed',
 		Function = function(val)
-			if anim then
-				anim:AdjustSpeed(val)
+			if track then
+				track:AdjustSpeed(val)
 			end
 		end,
 		Min = 0.1,
 		Max = 2,
+		Default = 1,
 		Decimal = 10
+	})
+	NoFetch = AnimationPlayer:CreateToggle({
+		Name = 'No Fetch',
+		Tooltip = 'Do not attempt to fetch the asset with GetObjects'
 	})
 end)
 
@@ -8871,6 +8891,7 @@ end)
 
 run(function()
 	local Ping
+	local Data
 	local label
 	
 	Ping = vape.Legit:CreateModule({
@@ -8878,7 +8899,8 @@ run(function()
 		Function = function(callback)
 			if callback then
 				repeat
-					label.Text = math.floor(tonumber(stats.PerformanceStats.Ping:GetValue()))..' ms'
+					local obj = Data.Enabled and stats.Network.ServerStatsItem['Data Ping'] or stats.PerformanceStats.Ping
+					label.Text = math.floor(tonumber(obj:GetValue()))..' ms'
 					task.wait(1)
 				until not Ping.Enabled
 			end
@@ -8901,6 +8923,10 @@ run(function()
 			label.BackgroundColor3 = Color3.fromHSV(hue, sat, val)
 			label.BackgroundTransparency = 1 - opacity
 		end
+	})
+	Data = Ping:CreateToggle({
+		Name = 'Data Ping',
+		Default = true
 	})
 	label = Instance.new('TextLabel')
 	label.Size = UDim2.new(0, 100, 0, 41)
