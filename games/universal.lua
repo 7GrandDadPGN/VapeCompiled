@@ -440,7 +440,7 @@ run(function()
 			return true
 		end
 
-		if arg == 'others' and plr ~= lplr then
+		if (arg == 'all' or arg == 'others') and plr ~= lplr then
 			return true
 		end
 
@@ -3521,15 +3521,23 @@ run(function()
 				SpinBot:Clean(runService.PreSimulation:Connect(function()
 					if entitylib.isAlive then
 						if Mode.Value == 'RotVelocity' then
-							local originalRotVelocity = entitylib.character.RootPart.RotVelocity
+							if entitylib.character.Humanoid.Sit then
+								return
+							end
+	
+							local original = entitylib.character.RootPart.AssemblyAngularVelocity
 							entitylib.character.Humanoid.AutoRotate = false
-							entitylib.character.RootPart.RotVelocity = Vector3.new(XToggle.Enabled and Value.Value or originalRotVelocity.X, YToggle.Enabled and Value.Value or originalRotVelocity.Y, ZToggle.Enabled and Value.Value or originalRotVelocity.Z)
+							entitylib.character.RootPart.AssemblyAngularVelocity = Vector3.new(XToggle.Enabled and Value.Value or original.X, YToggle.Enabled and Value.Value or original.Y, ZToggle.Enabled and Value.Value or original.Z)
 						elseif Mode.Value == 'CFrame' then
-							local val = math.rad((tick() * (20 * Value.Value)) % 360)
+							if entitylib.character.Humanoid.Sit then
+								return
+							end
+	
+							local val = math.rad((os.clock() * (20 * Value.Value)) % 360)
 							local x, y, z = entitylib.character.RootPart.CFrame:ToOrientation()
 							entitylib.character.RootPart.CFrame = CFrame.new(entitylib.character.RootPart.Position) * CFrame.Angles(XToggle.Enabled and val or x, YToggle.Enabled and val or y, ZToggle.Enabled and val or z)
 						elseif AngularVelocity then
-							AngularVelocity.Parent = entitylib.isAlive and entitylib.character.RootPart
+							AngularVelocity.Parent = entitylib.isAlive and not entitylib.character.Humanoid.Sit and entitylib.character.RootPart or nil
 							AngularVelocity.MaxTorque = Vector3.new(XToggle.Enabled and math.huge or 0, YToggle.Enabled and math.huge or 0, ZToggle.Enabled and math.huge or 0)
 							AngularVelocity.AngularVelocity = Vector3.new(Value.Value, Value.Value, Value.Value)
 						end
@@ -3555,6 +3563,7 @@ run(function()
 				AngularVelocity:Destroy()
 				AngularVelocity = nil
 			end
+	
 			AngularVelocity = val == 'BodyMover' and Instance.new('BodyAngularVelocity') or nil
 		end,
 		Tooltip = 'CFrame - Directly adjusts your characters angle\nRotVelocity - Sets the rotation velocity so that you spin\nBodyMover - Uses body movers to edit your rotation velocity'
@@ -3565,12 +3574,16 @@ run(function()
 		Max = 100,
 		Default = 40
 	})
-	XToggle = SpinBot:CreateToggle({Name = 'Spin X'})
+	XToggle = SpinBot:CreateToggle({
+		Name = 'Spin X'
+	})
 	YToggle = SpinBot:CreateToggle({
 		Name = 'Spin Y',
 		Default = true
 	})
-	ZToggle = SpinBot:CreateToggle({Name = 'Spin Z'})
+	ZToggle = SpinBot:CreateToggle({
+		Name = 'Spin Z'
+	})
 end)
 
 run(function()
@@ -6804,6 +6817,7 @@ run(function()
 	local Color
 	local Scale
 	local Background
+	local Stroke
 	WaypointFolder = Instance.new('Folder')
 	WaypointFolder.Parent = vape.holder
 	
@@ -6811,25 +6825,26 @@ run(function()
 		Name = 'Waypoints',
 		Function = function(callback)
 			if callback then
-				for _, v in List.ListEnabled do
-					local split = v:split('/')
+				for _, data in List.ListEnabled do
+					local split = data:split('/')
 					local tagSize = getfontbounds(removeTags(split[2]), 14 * Scale.Value, FontOption.Value, Vector2.new(100000, 100000))
 					local billboard = Instance.new('BillboardGui')
+					billboard.AlwaysOnTop = true
 					billboard.Size = UDim2.fromOffset(tagSize.X + 8, tagSize.Y + 7)
 					billboard.StudsOffsetWorldSpace = Vector3.new(unpack(split[1]:split(',')))
-					billboard.AlwaysOnTop = true
 					billboard.Parent = WaypointFolder
 					local tag = Instance.new('TextLabel')
 					tag.BackgroundColor3 = Color3.new()
-					tag.BorderSizePixel = 0
-					tag.Visible = true
-					tag.RichText = true
-					tag.FontFace = FontOption.Value
-					tag.TextSize = 14 * Scale.Value
 					tag.BackgroundTransparency = Background.Value
+					tag.BorderSizePixel = 0
+					tag.FontFace = FontOption.Value
+					tag.RichText = true
 					tag.Size = billboard.Size
 					tag.Text = split[2]
 					tag.TextColor3 = Color3.fromHSV(Color.Hue, Color.Sat, Color.Value)
+					tag.TextSize = 14 * Scale.Value
+					tag.TextStrokeTransparency = Stroke.Value
+					tag.Visible = true
 					tag.Parent = billboard
 				end
 			else
@@ -6850,20 +6865,17 @@ run(function()
 	})
 	List = Waypoints:CreateTextList({
 		Name = 'Points',
-		Placeholder = 'x, y, z/name',
+		Placeholder = '(name) | (x, y, z/name)',
 		Function = function()
 			if Waypoints.Enabled then
 				Waypoints:Toggle()
 				Waypoints:Toggle()
 			end
-		end
-	})
-	Waypoints:CreateButton({
-		Name = 'Add current position',
-		Function = function()
-			if entitylib.isAlive then
+		end,
+		TextFunction = function(text)
+			if not text:find('/') then
 				local pos = entitylib.character.RootPart.Position // 1
-				List:ChangeValue(pos.X..','..pos.Y..','..pos.Z..'/Waypoint '..(#List.List + 1))
+				return pos.X..','..pos.Y..','..pos.Z..'/'..text
 			end
 		end
 	})
@@ -6901,7 +6913,19 @@ run(function()
 		Max = 1,
 		Decimal = 10
 	})
-	
+	Stroke = Waypoints:CreateSlider({
+		Name = 'Stroke Transparency',
+		Function = function()
+			if Waypoints.Enabled then
+				Waypoints:Toggle()
+				Waypoints:Toggle()
+			end
+		end,
+		Default = 1,
+		Min = 0,
+		Max = 1,
+		Decimal = 10
+	})
 end)
 
 run(function()
@@ -7612,6 +7636,7 @@ end)
 
 run(function()
 	local Freecam
+	local Mode
 	local Value
 	local randomkey, module, old = httpService:GenerateGUID(false)
 	
@@ -7619,6 +7644,24 @@ run(function()
 		Name = 'Freecam',
 		Function = function(callback)
 			if callback then
+				if Mode.Value == 'Roblox' then
+					if not lplr.PlayerGui:FindFirstChild('Freecam') then
+						local gui = Instance.new('ScreenGui')
+						gui.ResetOnSpawn = false
+						gui.Name = 'Freecam'
+						gui.Parent = lplr.PlayerGui
+					end
+	
+					local fcScript = coreGui.RobloxGui.Modules.Server.FreeCamera.FreeCamera
+					getrenv().require(fcScript)
+					fcScript:SetAttribute('FreecamEnabled', true)
+	
+					Freecam:Clean(function()
+						fcScript:SetAttribute('FreecamEnabled', false)
+					end)
+					return
+				end
+	
 				repeat
 					task.wait(0.1)
 	
@@ -7673,11 +7716,26 @@ run(function()
 		end,
 		Tooltip = 'Lets you fly and clip through walls freely\nwithout moving your player server-sided.'
 	})
+	Mode = Freecam:CreateDropdown({
+		Name = 'Mode',
+		List = {'Classic', 'Roblox'},
+		Function = function(val)
+			if Freecam.Enabled then
+				Freecam:Toggle()
+				Freecam:Toggle()
+			end
+	
+			if Value then
+				Value.Object.Visible = val == 'Classic'
+			end
+		end
+	})
 	Value = Freecam:CreateSlider({
 		Name = 'Speed',
 		Min = 1,
 		Max = 150,
 		Default = 50,
+		Darker = true,
 		Suffix = function(val)
 			return val == 1 and 'stud' or 'studs'
 		end
