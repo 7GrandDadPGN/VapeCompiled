@@ -2351,10 +2351,13 @@ function vape:SortCategories()
 
 	for _, sort in sorting do
 		table.sort(sort)
-		for index, name in sort do
-			self.Modules[name].Index = index
+
+		local index = 2
+		for _, name in sort do
+			self.Modules[name].Index = index / 2
 			self.Modules[name].Object.LayoutOrder = index
-			self.Modules[name].Children.LayoutOrder = index
+			self.Modules[name].Children.LayoutOrder = index + 1
+			index += 2
 		end
 	end
 end
@@ -5792,6 +5795,10 @@ components = {
 		
 			if self.Enabled ~= (data.Enabled and not self.Bind.Hold) then
 				self:Toggle(true)
+		
+				if self.Bind.Mobile then
+					self.Bind.Mobile.BackgroundColor3 = self.Enabled and Color3.new(0, 0.7, 0) or Color3.new()
+				end
 			end
 		
 			if self.Visible ~= data.Visible then
