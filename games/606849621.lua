@@ -187,21 +187,35 @@ run(function()
 			end
 		end
 
-		return true
+		local _, occu = workspace.Terrain:ReadVoxels(Region3.new(pos - Vector3.one * 0.1, pos + Vector3.one * 0.1):ExpandToGrid(4), 4)
+		return occu[1][1][1] == 0
 	end
 
-	function OriginScanner:Scan(origin, target, extra, part)
+	function OriginScanner:Scan(origin, target, extra, part, entity)
 		if self.Cache[part] then
 			return table.unpack(self.Cache[part])
 		end
 
+		local hitboxPositions = {target}
 		if extra and (origin - extra).Magnitude < 14 then
 			self.Cache[part] = {extra}
 			return extra
 		end
 
-		local scanPositions = {}
+		local scanPositions = {origin}
 		local diff = CFrame.lookAt(origin * Vector3.new(1, 0, 1), target * Vector3.new(1, 0, 1)).LookVector
+		for _, normal in Enum.NormalId:GetEnumItems() do
+			local offset = Vector3.fromNormalId(normal)
+
+			if (offset * Vector3.new(1, 0, 1)):Dot(-diff) > -0.5 then
+				local pos = entity.RootPart.Position + offset * 20
+
+				if checkPoint(pos, overlapParams) then
+					table.insert(hitboxPositions, pos)
+				end
+			end
+		end
+
 		for _, offset in positions do
 			if (offset * Vector3.new(1, 0, 1)):Dot(diff) > -0.5 then
 				local pos = origin + offset * 14
@@ -212,12 +226,14 @@ run(function()
 			end
 		end
 
-		for _, pos in scanPositions do
-			local ray = workspace:Raycast(target, (pos - target), rayParams)
+		for _, hitbox in hitboxPositions do
+			for _, pos in scanPositions do
+				local ray = workspace:Raycast(hitbox, (pos - hitbox), rayParams)
 
-			if not ray then
-				self.Cache[part] = {pos}
-				return pos
+				if not ray then
+					self.Cache[part] = {pos, hitbox ~= target and hitbox or nil}
+					return pos, hitbox
+				end
 			end
 		end
 	end
@@ -401,7 +417,7 @@ run(function()
 
 			for _, v in sortingTable do
 				if entitysettings.Wallcheck then
-					if entitylib.Wallcheck(entitysettings.Origin, v.Entity[entitysettings.Part].Position, entitysettings.Wallbang, v.Entity[entitysettings.Part]) then continue end
+					if entitylib.Wallcheck(entitysettings.Origin, v.Entity[entitysettings.Part].Position, entitysettings.Wallbang, v.Entity[entitysettings.Part], v.Entity) then continue end
 				end
 				table.clear(entitysettings)
 				table.clear(sortingTable)
@@ -435,7 +451,7 @@ run(function()
 
 			for _, v in sortingTable do
 				if entitysettings.Wallcheck then
-					if entitylib.Wallcheck(localPosition, v.Entity[entitysettings.Part].Position, entitysettings.Wallbang, v.Entity[entitysettings.Part]) then continue end
+					if entitylib.Wallcheck(localPosition, v.Entity[entitysettings.Part].Position, entitysettings.Wallbang, v.Entity[entitysettings.Part], v.Entity) then continue end
 				end
 				table.clear(entitysettings)
 				table.clear(sortingTable)
@@ -470,7 +486,7 @@ run(function()
 
 			for _, v in sortingTable do
 				if entitysettings.Wallcheck then
-					if entitylib.Wallcheck(localPosition, v.Entity[entitysettings.Part].Position, entitysettings.Wallbang, v.Entity[entitysettings.Part]) then continue end
+					if entitylib.Wallcheck(localPosition, v.Entity[entitysettings.Part].Position, entitysettings.Wallbang, v.Entity[entitysettings.Part], v.Entity) then continue end
 				end
 				table.insert(returned, v.Entity)
 				if #returned >= (entitysettings.Limit or math.huge) then break end
@@ -481,10 +497,10 @@ run(function()
 		return returned
 	end
 
-	entitylib.Wallcheck = function(origin, position, checkpos, part)
+	entitylib.Wallcheck = function(origin, position, checkPosition, part, entity)
 		local ray = workspace.Raycast(workspace, position, (origin - position), OriginScanner.Ray)
 		if ray then
-			return not checkpos or not OriginScanner:Scan(checkpos, position, ray.Position + ray.Normal * 0.01, part)
+			return not checkPosition or not OriginScanner:Scan(checkPosition, position, ray and ray.Position + ray.Normal * 0.01 or nil, part, entity)
 		end
 
 		return false
@@ -875,16 +891,37 @@ run(function()
 	
 			if entity then
 				local oldTip
+				local aimSpot = targetPart.Position
+	
 				if Wallbang.Enabled then
 					local ray = workspace:Raycast(targetPart.Position, (origin.Position - targetPart.Position), OriginScanner.Ray)
 	
 					if ray then
-						local neworigin, hitbox = OriginScanner:Scan(entitylib.character.RootPart.Position, targetPart.Position, ray.Position + ray.Normal * 0.01, targetPart)
+						local newOrigin, hit = OriginScanner:Scan(entitylib.character.RootPart.Position, targetPart.Position, ray.Position + ray.Normal * 0.01, targetPart, entity)
 	
-						if neworigin then
+						if newOrigin then
 							oldTip = item.Tip.CFrame
-							origin = CFrame.lookAt(neworigin, targetPart.Position)
+							origin = CFrame.lookAt(newOrigin, targetPart.Position)
 							item.Tip.CFrame = origin
+	
+							if hit then
+								local part = Instance.new('Part')
+								part.Anchored = true
+								part.CanCollide = false
+								part.Position = hit
+								part.Size = Vector3.one * 1
+								part.Transparency = 1
+								part.Parent = entity.Character
+								task.spawn(function()
+									for i = 1, 2 do
+										runService.Heartbeat:Wait()
+									end
+	
+									part:Destroy()
+								end)
+	
+								aimSpot = hit
+							end
 						end
 					end
 				end
@@ -892,12 +929,12 @@ run(function()
 				ProjectileRaycast.FilterDescendantsInstances = {gameCamera, entity.Character, workspace.Vehicles}
 				ProjectileRaycast.CollisionGroup = entity.RootPart.CollisionGroup
 	
-				local trajectory = oldBulletUpdate and targetPart.Position or prediction.SolveTrajectory(origin.Position, item.Config.BulletSpeed or 1000, math.abs(item.BulletEmitter.GravityVector.Y), targetPart.Position, entity.RootPart.AssemblyLinearVelocity, workspace.Gravity, entity.HipHeight, nil, ProjectileRaycast)
+				local trajectory = oldBulletUpdate and aimSpot or prediction.SolveTrajectory(origin.Position, item.Config.BulletSpeed or 1000, math.abs(item.BulletEmitter.GravityVector.Y), targetPart.Position, entity.RootPart.AssemblyLinearVelocity, workspace.Gravity, entity.HipHeight, nil, ProjectileRaycast)
 				if trajectory then
 					targetinfo.Targets[entity] = tick() + 1
 					item.TipDirection = CFrame.lookAt(origin.Position, trajectory).LookVector
 					aimTimer = os.clock() + 0.3
-					aimVec = targetPart.Position
+					aimVec = aimSpot
 				end
 	
 				if oldTip then
@@ -1875,6 +1912,11 @@ end)
 run(function()
 	local modified = {}
 	local overlapCheck = OverlapParams.new()
+	local whitelist = {
+		BarbedWire = true,
+		Part = true,
+		Lavatouch = true
+	}
 	
 	LazerGodmode = vape.Categories.Blatant:CreateModule({
 		Name = 'LazerGodmode',
@@ -1886,8 +1928,10 @@ run(function()
 	
 						local parts = workspace:GetPartBoundsInRadius(entitylib.character.RootPart.Position, 10, overlapCheck)
 						for _, part in parts do
-							modified[part] = true
-							part.CanTouch = false
+							if whitelist[part.Name] then
+								modified[part] = true
+								part.CanTouch = false
+							end
 						end
 	
 						for part in modified do

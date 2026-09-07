@@ -162,14 +162,16 @@ local function serverHop(pointer, filter)
 	if not table.find(visited, game.JobId) then
 		table.insert(visited, game.JobId)
 	end
+
 	if not pointer then
 		notif('Vape', 'Searching for an available server.', 2)
 	end
 
-	local suc, httpdata = pcall(function()
+	local success, httpdata = pcall(function()
 		return cacheExpire < tick() and game:HttpGet('https://games.roblox.com/v1/games/'..game.PlaceId..'/servers/Public?sortOrder='..(filter == 'Ascending' and 1 or 2)..'&excludeFullGames=true&limit=100'..(pointer and '&cursor='..pointer or '')) or cache
 	end)
-	local data = suc and httpService:JSONDecode(httpdata) or nil
+
+	local data = success and httpService:JSONDecode(httpdata) or nil
 	if data and data.data then
 		for _, v in data.data do
 			if tonumber(v.playing) < playersService.MaxPlayers and not table.find(visited, v.id) and not table.find(attempted, v.id) then
@@ -2437,14 +2439,15 @@ run(function()
 		Function = function(callback)
 			if callback then
 				repeat
-					for _, v in entitylib.List do
-						if v.Targetable then
-							if not Targets.Players.Enabled and v.Player then continue end
-							if not Targets.NPCs.Enabled and v.NPC then continue end
-							local part = v[TargetPart.Value]
+					for _, entity in entitylib.List do
+						if entity.Targetable then
+							if not Targets.Players.Enabled and entity.Player then continue end
+							if not Targets.NPCs.Enabled and entity.NPC then continue end
+							local part = entity[TargetPart.Value]
 							if not modified[part] then
 								modified[part] = part.Size
 							end
+	
 							part.Size = modified[part] + Vector3.new(Expand.Value, Expand.Value, Expand.Value)
 						end
 					end
@@ -2452,15 +2455,17 @@ run(function()
 					task.wait()
 				until not HitBoxes.Enabled
 			else
-				for i, v in modified do
-					i.Size = v
+				for part, value in modified do
+					part.Size = value
 				end
 				table.clear(modified)
 			end
 		end,
 		Tooltip = 'Expands entities hitboxes'
 	})
-	Targets = HitBoxes:CreateTargets({Players = true})
+	Targets = HitBoxes:CreateTargets({
+		Players = true
+	})
 	TargetPart = HitBoxes:CreateDropdown({
 		Name = 'Part',
 		List = {'RootPart', 'Head'}

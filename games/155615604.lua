@@ -181,7 +181,7 @@ run(function()
 				local ray = workspace:Raycast(hitbox, (pos - hitbox), rayParams)
 
 				if not ray then
-					self.Cache[part] = {pos, hitbox}
+					self.Cache[part] = {pos, hitbox ~= target and hitbox or nil}
 					return pos, hitbox
 				end
 			end
@@ -718,20 +718,51 @@ run(function()
 		return inputService.GetMouseLocation(inputService)
 	end
 
-	local function getShootTool()
+	local function getShootTool(range)
 		local tool = lplr.Character:FindFirstChildWhichIsA('Tool')
 		if tool and tool:GetAttribute('FireRate') and (not tool:GetAttribute('Local_IsShooting')) and (tool:GetAttribute('Local_ReloadSession') or 0) <= 0 and (tool:GetAttribute('Local_CurrentAmmo') or 1) > 0 then
-			return tool
+			local dist = tool:GetAttribute('Range') or 0
+			if dist > range then
+				return tool
+			end
 		end
 
 		local backpack = lplr:FindFirstChildWhichIsA('Backpack')
 		if backpack then
 			for _, tool in backpack:GetChildren() do
 				if tool:IsA('Tool') and tool:GetAttribute('FireRate') and (not tool:GetAttribute('Local_IsShooting')) and (tool:GetAttribute('Local_ReloadSession') or 0) <= 0 and tool.Name ~= 'Taser' then
-					return tool
+					local dist = tool:GetAttribute('Range') or 0
+					if dist > range then
+						return tool
+					end
 				end
 			end
 		end
+	end
+
+	local function getMaxRange()
+		local mag = 0
+		local tool = lplr.Character:FindFirstChildWhichIsA('Tool')
+		if tool and tool:GetAttribute('Range') and (tool:GetAttribute('Local_ReloadSession') or 0) <= 0 then
+			local dist = tool:GetAttribute('Range')
+			if dist > mag then
+				mag = dist
+			end
+		end
+
+		local backpack = lplr:FindFirstChildWhichIsA('Backpack')
+		if backpack then
+			for _, tool in backpack:GetChildren() do
+				if tool:IsA('Tool') and tool:GetAttribute('Range') and (tool:GetAttribute('Local_ReloadSession') or 0) <= 0 and tool.Name ~= 'Taser' then
+					local dist = tool:GetAttribute('Range')
+					if dist > mag then
+						mag = dist
+					end
+				end
+			end
+		end
+
+		return mag
 	end
 
 	local function getTarget(origin, limit, attackcheck)
@@ -779,7 +810,6 @@ run(function()
 				ray = workspace:Raycast(args[2], (origin - args[2]), OriginScanner.Ray)
 			end
 
-
 			if OriginScanner.Cache[targetPart] or ray or workspace:Raycast(origin, (args[2] - origin), OriginScanner.Ray) then
 				local newOrigin, hit = OriginScanner:Scan(entitylib.character.RootPart.Position, args[2], ray and ray.Position + ray.Normal * 0.01 or nil, targetPart, entity)
 
@@ -824,18 +854,8 @@ run(function()
 
 						local tool = lplr.Character:FindFirstChildWhichIsA('Tool')
 						local gundata = debug.getupvalue(oldshoot or pl.Shoot, 10)
-						local ammo = tool and tool:GetAttribute('Local_CurrentAmmo') or 0
-
-						if AutoFireSwitch.Enabled and entitylib.isAlive then
-							local ideal = getShootTool()
-							if tool and ideal and tool ~= ideal then
-								entitylib.character.Humanoid:EquipTool(ideal)
-								gundata = nil
-							end
-						end
-
-						if gundata and ammo > 0 and not tool:GetAttribute('Local_IsShooting') then
-							local limit = gundata.Range or 1000
+						if tool and gundata then
+							local limit = AutoFireSwitch.Enabled and getMaxRange() or gundata.Range or 1000
 							local taser = gundata and gundata.Behavior == 'Taser'
 							local entity = entitylib['Entity'..Mode.Value]({
 								Range = Mode.Value == 'Position' and math.min(Range.Value, limit) or Range.Value,
@@ -849,7 +869,16 @@ run(function()
 							})
 
 							if entity and entitylib.character.Humanoid.Health > 0 then
-								if not ((taser or AutoFireTaser.Enabled) and (entity.Character:GetAttribute('Tased') or entity.Character:GetAttribute('Arrested'))) then
+								local canFire = not tool:GetAttribute('Local_IsShooting') and (tool:GetAttribute('Local_CurrentAmmo') or 0) > 0
+								if AutoFireSwitch.Enabled then
+									local ideal = getShootTool((entity.Head.Position - entitylib.character.Head.Position).Magnitude)
+									if ideal and tool ~= ideal then
+										entitylib.character.Humanoid:EquipTool(ideal)
+										canFire = false
+									end
+								end
+
+								if canFire and not ((taser or AutoFireTaser.Enabled) and (entity.Character:GetAttribute('Tased') or entity.Character:GetAttribute('Arrested'))) then
 									fireDelay = os.clock() + (AutoFireSwitch.Enabled and 0.05 or ammo > 1 and gundata.FireRate or 1 / AutoFireRate.Value)
 									local obj = {UserInputState = Enum.UserInputState.Begin, UserInputType = Enum.UserInputType.MouseButton1, Position = Vector3.zero}
 									task.spawn(pl.Shoot, obj)
@@ -895,7 +924,7 @@ run(function()
 	Range = SilentAim:CreateSlider({
 		Name = 'Range',
 		Min = 1,
-		Max = 1000,
+		Max = 1500,
 		Default = 150,
 		Function = function(val)
 			if CircleObject then
@@ -2476,10 +2505,10 @@ run(function()
 	overlap.CollisionGroup = 'Players'
 	overlap.FilterDescendantsInstances = {workspace.CarContainer, workspace.Doors}
 	overlap.FilterType = Enum.RaycastFilterType.Exclude
-	local caroverlap = OverlapParams.new()
-	caroverlap.FilterDescendantsInstances = {workspace.CarContainer}
-	caroverlap.FilterType = Enum.RaycastFilterType.Include
-	caroverlap.MaxParts = 1
+	local carOverlap = OverlapParams.new()
+	carOverlap.FilterDescendantsInstances = {workspace.CarContainer}
+	carOverlap.FilterType = Enum.RaycastFilterType.Include
+	carOverlap.MaxParts = 1
 	
 	local whiteliststates = {
 		[Enum.HumanoidStateType.Running] = true,
@@ -2521,7 +2550,7 @@ run(function()
 				local lastDelta = 0
 				repeat
 					for _, entity in entitylib.List do
-						if entity.Health > 0 and entity.Player then
+						if entity.Health > 0 and entity.Player and not Cheats.Flagged[entity.Player.UserId] then
 							local playerPos = entity.RootPart.Position
 	
 							if not checkPoint(entity.Head.Position, overlap) then
@@ -2535,23 +2564,31 @@ run(function()
 							local velo = entity.RootPart.AssemblyLinearVelocity
 							if not entity.Humanoid.SeatPart then
 								if (velo * Vector3.new(1, 0, 1)).Magnitude > 26 then
-									if #workspace:GetPartBoundsInRadius(playerPos, 30, caroverlap) <= 0 then
+									if #workspace:GetPartBoundsInRadius(playerPos, 30, carOverlap) <= 0 then
 										Cheats:Flag(entity.Player, 'speed', 20)
 									end
 								end
 	
-								if Teleport.Enabled and positions[entity] and ((playerPos - positions[entity]) * Vector3.new(1, 0, 1)).Magnitude > 20 and lastDelta < 0.1 then
-									if #workspace:GetPartBoundsInRadius(playerPos, 30, caroverlap) <= 0 then
-										Cheats:Flag(entity.Player, 'teleport', 1)
+								if positions[entity] then
+									if Teleport.Enabled and ((playerPos - positions[entity][1]) * Vector3.new(1, 0, 1)).Magnitude > 50 and #workspace:GetPartBoundsInRadius(playerPos, 30, carOverlap) <= 0 then
+										local canFlag = entity.Player.Team ~= teams.Inmates or (os.clock() - entity.SpawnTime) > 0.1
+	
+										if canFlag then
+											Cheats:Flag(entity.Player, 'teleport', 1)
+										end
 									end
 								end
 	
 								if velo.Y > 50 then
 									Cheats:Flag(entity.Player, 'highjump', 20)
 								end
-							end
 	
-							positions[entity] = playerPos
+								if not positions[entity] or (os.clock() - positions[entity][2]) > 0.2 then
+									positions[entity] = {playerPos, os.clock()}
+								end
+							else
+								positions[entity] = {playerPos, os.clock()}
+							end
 						end
 					end
 	
