@@ -6139,6 +6139,15 @@ run(function()
 	stroke.Parent = holder
 	
 	do
+		local BLOCK_SIZE = 64
+		local xor_with_0x5c = {}
+		local xor_with_0x36 = {}
+	
+		for i = 0, 255 do
+			xor_with_0x5c[string.char(i)] = string.char(bit32.bxor(0x5c, i))
+			xor_with_0x36[string.char(i)] = string.char(bit32.bxor(0x36, i))
+		end
+	
 		local function numberToByteString(number)
 			local bytes = {}
 			while number ~= 0 do
@@ -6155,6 +6164,23 @@ run(function()
 				data[i] = string.format('%02x', math.random() * 255)
 			end
 			return table.concat(data)
+		end
+	
+		local function hex_to_binary(hex)
+			return (hex:gsub('..', function(num)
+				return string.char(tonumber(num, 16))
+			end))
+		end
+	
+		local function hmac(key, text)
+			if #key > BLOCK_SIZE then
+				key = hex_to_binary(hash.sha1(key))
+			end
+	
+			local key_xord_with_0x36 = key:gsub('.', xor_with_0x36) .. string.rep(string.char(0x36), BLOCK_SIZE - #key)
+			local key_xord_with_0x5c = key:gsub('.', xor_with_0x5c) .. string.rep(string.char(0x5c), BLOCK_SIZE - #key)
+	
+			return hex_to_binary(hash.sha1(key_xord_with_0x5c .. hex_to_binary(hash.sha1(key_xord_with_0x36 .. text))))
 		end
 	
 		local function readURLAndConfig(code)
@@ -6198,7 +6224,7 @@ run(function()
 		end
 	
 		local function generateOTP(input, secret)
-			local hash = base64decode(crypt.hmac(secret, numberToByteString(input), 'sha1'))
+			local hash = hmac(secret, numberToByteString(input), 'sha1')
 			local offset = bit32.band(string.byte(hash:sub(-1, -1)), 0x0f) + 1
 			local bHash = stringToBytes(hash)
 	
