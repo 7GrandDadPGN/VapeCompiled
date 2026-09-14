@@ -505,6 +505,28 @@ run(function()
 
 		return false
 	end
+
+	local oldstart = entitylib.start
+	local function customEntity(ent)
+		local plr = playersService:GetPlayerFromCharacter(ent.Parent)
+		if not plr then
+			entitylib.addEntity(ent.Parent)
+		end
+	end
+
+	entitylib.start = function()
+		oldstart()
+		if entitylib.Running then
+			for _, ent in collectionService:GetTagged('Humanoid') do
+				customEntity(ent)
+			end
+
+			table.insert(entitylib.Connections, collectionService:GetInstanceAddedSignal('Humanoid'):Connect(customEntity))
+			table.insert(entitylib.Connections, collectionService:GetInstanceRemovedSignal('Humanoid'):Connect(function(ent)
+				entitylib.removeEntity(ent.Parent)
+			end))
+		end
+	end
 end)
 entitylib.start()
 
@@ -996,7 +1018,7 @@ run(function()
 	Range = SilentAim:CreateSlider({
 		Name = 'Range',
 		Min = 1,
-		Max = 1000,
+		Max = 1500,
 		Default = 150,
 		Function = function(val)
 			if CircleObject then
@@ -2275,7 +2297,7 @@ run(function()
 	local AutoPickup
 	local Lists = {}
 	local Regions = {}
-	local pickupList = {Police = {}, Prisoner = {}}
+	local PickupList = {}
 	local overlapParams = OverlapParams.new()
 	overlapParams.FilterType = Enum.RaycastFilterType.Include
 	overlapParams.MaxParts = 1
@@ -2308,7 +2330,7 @@ run(function()
 					if entitylib.isAlive then
 						local parts = workspace:GetPartsInPart(entitylib.character.RootPart, overlapParams)
 						if #parts > 0 then
-							for _, entry in pickupList[lplr.Team == teams.Police and 'Police' or 'Prisoner'] do
+							for _, entry in PickupList[lplr.Team == teams.Police and 'Police' or 'Prisoner'].ListEnabled do
 								if not InvTracker.Inventories[lplr][entry] and doesPlayerOwn(entry) then
 									jb:FireServer('EquipItem', entry, nil)
 								end
@@ -2328,17 +2350,10 @@ run(function()
 	})
 	
 	for _, team in {'Prisoner', 'Police'} do
-		AutoPickup:CreateTextList({
-			Name = team..' Pickups',
+		PickupList[team] = AutoPickup:CreateTextList({
+			Name = team,
 			Default = team == 'Prisoner' and {'AK47', 'Shotgun', 'Pistol'} or {'AK47', 'Shotgun'},
-			Placeholder = 'item',
-			Function = function(list)
-				table.clear(pickupList[team])
-	
-				for _, entry in list do
-					table.insert(pickupList[team], entry)
-				end
-			end
+			Placeholder = 'item'
 		})
 	end
 end)

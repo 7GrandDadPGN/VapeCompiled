@@ -146,17 +146,8 @@ local function removeTags(str)
 	return (str:gsub('<[^<>]->', ''))
 end
 
-local function rakNetCheck(module)
-	if not (raknet and raknet.add_send_hook and pcall(raknet.add_send_hook, function() end)) then
-		notif(module, 'This feature requires raknet! (risky feature, please do not use on mains.)', 10, 'warning')
-		return false
-	end
-
-	return true
-end
-
 local visited, attempted, tpSwitch = {}, {}, false
-local cacheExpire, cache = tick()
+local cacheExpire, cache = os.clock()
 local function serverHop(pointer, filter)
 	visited = shared.vapeserverhoplist and shared.vapeserverhoplist:split('/') or {}
 	if not table.find(visited, game.JobId) then
@@ -168,14 +159,14 @@ local function serverHop(pointer, filter)
 	end
 
 	local success, httpdata = pcall(function()
-		return cacheExpire < tick() and game:HttpGet('https://games.roblox.com/v1/games/'..game.PlaceId..'/servers/Public?sortOrder='..(filter == 'Ascending' and 1 or 2)..'&excludeFullGames=true&limit=100'..(pointer and '&cursor='..pointer or '')) or cache
+		return cacheExpire < os.clock() and game:HttpGet('https://games.roblox.com/v1/games/'..game.PlaceId..'/servers/Public?sortOrder='..(filter == 'Ascending' and 1 or 2)..'&excludeFullGames=true&limit=100'..(pointer and '&cursor='..pointer or '')) or cache
 	end)
 
 	local data = success and httpService:JSONDecode(httpdata) or nil
 	if data and data.data then
 		for _, v in data.data do
 			if tonumber(v.playing) < playersService.MaxPlayers and not table.find(visited, v.id) and not table.find(attempted, v.id) then
-				cacheExpire, cache = tick() + 60, httpdata
+				cacheExpire, cache = os.clock() + 60, httpdata
 				table.insert(attempted, v.id)
 
 				notif('Vape', 'Found! Teleporting.', 5)
@@ -1323,6 +1314,10 @@ run(function()
 		FindPartOnRayWithIgnoreList = {
 			Hook = workspace.FindPartOnRayWithIgnoreList,
 			Function = function(args)
+				if typeof(args[1]) ~= 'Ray' then
+					return
+				end
+
 				local entity, targetPart, origin = getTarget(args[1].Origin, {args[2]})
 				if not entity then
 					return
@@ -1343,6 +1338,10 @@ run(function()
 		Raycast = {
 			Hook = workspace.Raycast,
 			Function = function(args)
+				if typeof(args[1]) ~= 'Vector3' or typeof(args[2]) ~= 'Vector3' or args[3] and typeof(args[3]) ~= 'RaycastParams' then
+					return
+				end
+
 				if RayMethod.Value ~= 'All' and args[3] and args[3].FilterType ~= Enum.RaycastFilterType[RayMethod.Value] then
 					return
 				end
@@ -1362,6 +1361,10 @@ run(function()
 		ScreenPointToRay = {
 			Hook = Instance.new('Camera').ScreenPointToRay,
 			Function = function(args)
+				if args[3] and type(args[3]) ~= 'number' then
+					return
+				end
+
 				local entity, targetPart, origin = getTarget(gameCamera.CFrame.Position)
 				if not entity then
 					return
@@ -1385,6 +1388,10 @@ run(function()
 		Ray = {
 			Hook = Ray.new,
 			Function = function(args)
+				if typeof(args[1]) ~= 'Vector3' or typeof(args[2]) ~= 'Vector3' then
+					return
+				end
+
 				local entity, targetPart, origin = getTarget(args[1])
 				if not entity then
 					return
@@ -1415,7 +1422,7 @@ run(function()
 		end
 
 		local caller = getcallingscript()
-		if caller then
+		if typeof(caller) == 'Instance' and caller then
 			if table.find(IgnoredScripts.ListEnabled, tostring(caller)) then
 				return oldnamecall(...)
 			end
@@ -1456,7 +1463,7 @@ run(function()
 						end
 
 						local caller = getcallingscript()
-						if caller then
+						if typeof(caller) == 'Instance' and caller then
 							if table.find(IgnoredScripts.ListEnabled, tostring(caller)) then
 								return oldnamecall(...)
 							end
@@ -2491,14 +2498,14 @@ run(function()
 		if entitylib.isAlive then
 			local isR15 = entitylib.character.Humanoid.RigType == Enum.HumanoidRigType.R15
 			local anim = Instance.new('Animation')
-			anim.AnimationId = 'rbxassetid://'..(isR15 and '18537363391' or '215384594')
+			anim.AnimationId = 'rbxassetid://'..(isR15 and '18665825805' or '215384594')
 			animtrack = entitylib.character.Humanoid.Animator:LoadAnimation(anim)
 			animtrack.Priority = Enum.AnimationPriority.Action4
 			animtrack:Play(0, 0.001, 0)
 			anim:Destroy()
 	
 			task.delay(0, function()
-				animtrack.TimePosition = isR15 and 0.77 or 0.38
+				animtrack.TimePosition = isR15 and 1.95 or 0.4
 			end)
 		end
 	end
@@ -2570,8 +2577,9 @@ run(function()
 				params.FilterDescendantsInstances = {terrain}
 				local Platform = Instance.new('Part')
 				Platform.CanQuery = false
+				Platform.CanTouch = false
 				Platform.Anchored = true
-				Platform.Size = Vector3.one
+				Platform.Size = Vector3.new(3, 1, 3)
 				Platform.Transparency = 1
 				Platform.Parent = gameCamera
 	
@@ -3021,33 +3029,38 @@ run(function()
 					MouseTP:Toggle()
 	
 					if entitylib.isAlive then
+						local root = entitylib.character.RootPart
+						local Invisible = vape.Modules.Invisible
+						if Invisible and Invisible.Enabled then
+							runService.PreSimulation:Wait()
+						end
+	
 						if MovementMode.Value == 'Motor' then
-							motorMove(entitylib.character.RootPart, CFrame.lookAlong(position, entitylib.character.RootPart.CFrame.LookVector))
+							motorMove(root, CFrame.lookAlong(position, root.CFrame.LookVector))
 						else
-							entitylib.character.RootPart.CFrame = CFrame.lookAlong(position, entitylib.character.RootPart.CFrame.LookVector)
+							root.CFrame = CFrame.lookAlong(position, root.CFrame.LookVector)
 						end
 					end
 				else
-					MouseTP:Clean(runService.Heartbeat:Connect(function()
+					local updateClock = 0
+					MouseTP:Clean(runService.PreSimulation:Connect(function()
 						if entitylib.isAlive then
 							entitylib.character.RootPart.AssemblyLinearVelocity = Vector3.zero
-						end
-					end))
 	
-					repeat
-						if entitylib.isAlive then
-							local direction = CFrame.lookAt(entitylib.character.RootPart.Position, position).LookVector * math.min((entitylib.character.RootPart.Position - position).Magnitude, Length.Value)
-							entitylib.character.RootPart.CFrame += direction
-							if (entitylib.character.RootPart.Position - position).Magnitude < 3 and MouseTP.Enabled then
-								MouseTP:Toggle()
+							if (os.clock() - updateClock) > Delay.Value then
+								local direction = CFrame.lookAt(entitylib.character.RootPart.Position, position).LookVector * math.min((entitylib.character.RootPart.Position - position).Magnitude, Length.Value)
+								entitylib.character.RootPart.CFrame += direction
+								updateClock = os.clock()
+	
+								if (entitylib.character.RootPart.Position - position).Magnitude < 3 and MouseTP.Enabled then
+									MouseTP:Toggle()
+								end
 							end
-						elseif MouseTP.Enabled then
+						else
 							MouseTP:Toggle()
 							notif('MouseTP', 'Character missing', 5, 'warning')
 						end
-	
-						task.wait(Delay.Value)
-					until not MouseTP.Enabled
+					end))
 				end
 			end
 		end,
@@ -3612,7 +3625,7 @@ run(function()
 							local pos = root.Position - Vector3.new(0, 1, 0)
 							local newpos = Region3.new(pos - factor, pos + factor):ExpandToGrid(4)
 							terrain:ReplaceMaterial(lastpos, 4, Enum.Material.Water, Enum.Material.Air)
-							terrain:FillRegion(newpos, 4, Enum.Material.Water)
+							terrain:ReplaceMaterial(newpos, 4, Enum.Material.Air, Enum.Material.Water)
 							lastpos = newpos
 						end
 					end
@@ -5437,9 +5450,10 @@ run(function()
 	local models = {}
 	
 	local function addMesh(ent)
-		if vape.ThreadFix then 
+		if vape.ThreadFix then
 			setthreadidentity(8)
 		end
+	
 		local root = ent.RootPart
 		local part = Instance.new('Part')
 		part.Size = Vector3.new(3, 3, 3)
@@ -5461,7 +5475,7 @@ run(function()
 	end
 	
 	local function removeMesh(ent)
-		if models[ent.RootPart] then 
+		if models[ent.RootPart] then
 			models[ent.RootPart]:Destroy()
 			models[ent.RootPart] = nil
 		end
@@ -5470,21 +5484,21 @@ run(function()
 	PlayerModel = vape.Categories.Render:CreateModule({
 		Name = 'PlayerModel',
 		Function = function(callback)
-			if callback then 
-				if Local.Enabled then 
+			if callback then
+				if Local.Enabled then
 					PlayerModel:Clean(entitylib.Events.LocalAdded:Connect(addMesh))
 					PlayerModel:Clean(entitylib.Events.LocalRemoved:Connect(removeMesh))
-					if entitylib.isAlive then 
+					if entitylib.isAlive then
 						task.spawn(addMesh, entitylib.character)
 					end
 				end
 				PlayerModel:Clean(entitylib.Events.EntityAdded:Connect(addMesh))
 				PlayerModel:Clean(entitylib.Events.EntityRemoved:Connect(removeMesh))
-				for _, ent in entitylib.List do 
+				for _, ent in entitylib.List do
 					task.spawn(addMesh, ent)
 				end
 			else
-				for _, part in models do 
+				for _, part in models do
 					part:Destroy()
 				end
 				table.clear(models)
@@ -5499,18 +5513,18 @@ run(function()
 		Default = 1,
 		Decimal = 100,
 		Function = function(val)
-			for _, part in models do 
+			for _, part in models do
 				part.Mesh.Scale = Vector3.one * val
 			end
 		end
 	})
-	for _, name in {'Rotation X', 'Rotation Y', 'Rotation Z'} do 
+	for _, name in {'Rotation X', 'Rotation Y', 'Rotation Z'} do
 		table.insert(Rots, PlayerModel:CreateSlider({
 			Name = name,
 			Min = 0,
 			Max = 360,
 			Function = function(val)
-				for root, part in models do 
+				for root, part in models do
 					part.WeldConstraint.Enabled = false
 					part.CFrame = root.CFrame * CFrame.Angles(math.rad(Rots[1].Value), math.rad(Rots[2].Value), math.rad(Rots[3].Value))
 					part.WeldConstraint.Enabled = true
@@ -5521,7 +5535,7 @@ run(function()
 	Local = PlayerModel:CreateToggle({
 		Name = 'Local',
 		Function = function()
-			if PlayerModel.Enabled then 
+			if PlayerModel.Enabled then
 				PlayerModel:Toggle()
 				PlayerModel:Toggle()
 			end
@@ -5531,7 +5545,7 @@ run(function()
 		Name = 'Mesh',
 		Placeholder = 'mesh id',
 		Function = function()
-			for _, part in models do 
+			for _, part in models do
 				part.Mesh.MeshId = Mesh.Value
 			end
 		end
@@ -5540,7 +5554,7 @@ run(function()
 		Name = 'Texture',
 		Placeholder = 'texture id',
 		Function = function()
-			for _, part in models do 
+			for _, part in models do
 				part.Mesh.TextureId = Texture.Value
 			end
 		end
@@ -5759,7 +5773,7 @@ run(function()
 					end
 				end))
 	
-				for _, v in workspace:GetDescendants() do
+				for _, v in workspace:QueryDescendants('BasePart, Model') do
 					Add(v)
 				end
 			else
@@ -7062,7 +7076,8 @@ run(function()
 	})
 	NoFetch = AnimationPlayer:CreateToggle({
 		Name = 'No Fetch',
-		Tooltip = 'Do not attempt to fetch the asset with GetObjects'
+		Tooltip = 'Do not attempt to fetch the asset with GetObjects',
+		Default = true
 	})
 end)
 
@@ -7305,6 +7320,54 @@ run(function()
 end)
 
 run(function()
+	local HumSpoofer
+	local State
+	local ReplaceJump
+	local Jump
+	
+	HumSpoofer = vape.Categories.Utility:CreateModule({
+		Name = 'HumSpoofer',
+		Function = function(callback)
+			if callback then
+				HumSpoofer:Clean(runService.Heartbeat:Connect(function()
+					if entitylib.isAlive then
+						local hum = entitylib.character.Humanoid
+						sethiddenproperty(hum, 'NetworkHumanoidState', Enum.HumanoidStateType[State.Value].Value)
+	
+						if ReplaceJump.Enabled then
+							sethiddenproperty(hum, 'JumpReplicate', Jump.Enabled)
+						end
+					end
+				end))
+			end
+		end,
+		Tooltip = 'Spoof humanoid and jump states on the server.'
+	})
+	local states = {}
+	for _, v in Enum.HumanoidStateType:GetEnumItems() do
+		if v.Name ~= 'None' then
+			table.insert(states, v.Name)
+		end
+	end
+	State = HumSpoofer:CreateDropdown({
+		Name = 'Humanoid State',
+		List = states
+	})
+	ReplaceJump = HumSpoofer:CreateToggle({
+		Name = 'Replace Jump',
+		Function = function(callback)
+			Jump.Object.Visible = callback
+		end,
+		Tooltip = 'Replace the current jump state on the server'
+	})
+	Jump = HumSpoofer:CreateToggle({
+		Name = 'Jump State',
+		Visible = false,
+		Darker = true
+	})
+end)
+
+run(function()
 	vape.Categories.Utility:CreateModule({
 		Name = 'Panic',
 		Function = function(callback)
@@ -7515,48 +7578,6 @@ run(function()
 	Role = StaffDetector:CreateTextBox({
 		Name = 'Role',
 		Placeholder = 'Role Rank'
-	})
-end)
-
-run(function()
-	local StateSpoofer
-	local State
-	local hook
-	
-	StateSpoofer = vape.Categories.Utility:CreateModule({
-		Name = 'StateSpoofer',
-		Function = function(callback)
-			if callback then
-				if not rakNetCheck('StateSpoofer') then
-					StateSpoofer:Toggle()
-					return
-				end
-	
-				hook = function(packet)
-					if packet.AsArray[1] == 0x1b then
-						local data = packet.AsBuffer
-						buffer.writeu8(data, 25, Enum.HumanoidStateType[State.Value].Value + 32)
-						packet:SetData(data)
-					end
-				end
-	
-				raknet.add_send_hook(hook)
-			elseif hook then
-				raknet.remove_send_hook(hook)
-				hook = nil
-			end
-		end,
-		Tooltip = 'Spoof humanoid states on the server.'
-	})
-	local states = {}
-	for _, v in Enum.HumanoidStateType:GetEnumItems() do
-		if v.Name ~= 'None' then
-			table.insert(states, v.Name)
-		end
-	end
-	State = StateSpoofer:CreateDropdown({
-		Name = 'Humanoid State',
-		List = states
 	})
 end)
 
