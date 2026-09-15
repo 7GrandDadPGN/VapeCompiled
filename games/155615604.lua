@@ -1711,7 +1711,7 @@ run(function()
 								if target then
 									seat.AssemblyLinearVelocity = Vector3.new(10000, 10000, 0)
 									seat.CFrame = CFrame.new(target.RootPart.Position) * CFrame.new(-2, -2, -12)
-									sethiddenproperty(seat, 'PhysicsRepRootPart', root)
+									sethiddenproperty(seat, 'PhysicsRepRootPart', target.RootPart)
 	
 									local wheels = seat.Parent.Parent:FindFirstChild('Wheels')
 									if wheels then
