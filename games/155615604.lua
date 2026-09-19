@@ -1652,6 +1652,7 @@ run(function()
 	local AutoRejoin
 	local PlayerLimit
 	local TimeLimit
+	local HopList
 	local didClick = {}
 	local lastFling = {}
 	local tempList = setmetatable({}, {
@@ -1670,6 +1671,7 @@ run(function()
 			end)
 	
 			for _, entity in cloned do
+				if isFriend(entity.Player) then continue end
 				if not select(2, whitelist:get(entity.Player)) then continue end
 				if entity.Player.Team == teams.Neutral then continue end
 				if Mode.Value ~= 'All' and not table.find(List.ListEnabled, entity.Player.Name) then continue end
@@ -1690,13 +1692,27 @@ run(function()
 		Name = 'KickExploit',
 		Function = function(callback)
 			if callback then
+				local reqTimer = os.clock()
+				local startTime = os.clock()
+				local dir = 0
+	
 				if not vape.Modules.AntiFling.Enabled then
 					vape.Modules.AntiFling:Toggle()
 				end
 	
-				local reqTimer = os.clock()
-				local startTime = os.clock()
-				local dir = 0
+				if AutoRejoin.Enabled then
+					for _, plr in playersService:GetPlayers() do
+						if plr and plr.Team ~= teams.Neutral and table.find(HopList.ListEnabled, plr.Name) then
+							repeat
+								vape.Modules.ServerHop:Toggle()
+								task.wait(1)
+							until not KickExploit.Enabled
+	
+							return
+						end
+					end
+				end
+	
 				KickExploit:Clean(runService.Heartbeat:Connect(function(dt)
 					if lplr.Team == teams.Neutral then
 						local gui = lplr.PlayerGui:FindFirstChild('TeamsFrame', true)
@@ -1801,6 +1817,7 @@ run(function()
 		Function = function(callback)
 			PlayerLimit.Object.Visible = callback
 			TimeLimit.Object.Visible = callback
+			HopList.Object.Visible = callback
 		end,
 		Tooltip = 'Automatically server hop after certain conditions are met.'
 	})
@@ -1825,6 +1842,14 @@ run(function()
 		Suffix = function(value)
 			return value == 1 and 'minute' or 'minutes'
 		end
+	})
+	HopList = KickExploit:CreateTextList({
+		Name = 'Hop List',
+		Placeholder = 'Roblox username',
+		Tooltip = 'Automatically hop if the player is spawned in and in the server, good for multiboxing.',
+		Player = true,
+		Visible = false,
+		Darker = true
 	})
 end)
 
@@ -2608,6 +2633,28 @@ run(function()
 	HotSwap = AutoReload:CreateToggle({
 		Name = 'Auto Swap',
 		Tooltip = 'Automatically swap weapons when reloading'
+	})
+end)
+
+run(function()
+	local AutoTeam
+	
+	AutoTeam = vape.Categories.Utility:CreateModule({
+		Name = 'AutoTeam',
+		Function = function(callback)
+			if callback then
+				local gui = lplr.PlayerGui:FindFirstChild('TeamsFrame', true)
+				if gui then
+					for _, holder in gui:GetChildren() do
+						if holder.Button.AutoButtonColor then
+							firesignal(holder.Button.MouseButton1Click)
+							break
+						end
+					end
+				end
+			end
+		end,
+		Tooltip = 'Automatically join a team when joining the server'
 	})
 end)
 
