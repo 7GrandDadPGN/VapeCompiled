@@ -1825,6 +1825,16 @@ function vape:LoadGUI()
 					end)
 				end
 		
+				local firstIndex
+				local lastIndex
+		
+				for index, label in Labels do
+					if label.Enabled then
+						firstIndex = firstIndex or index
+						lastIndex = index
+					end
+				end
+		
 				for index, label in Labels do
 					if label.Color then
 						local topLabel = findValidLabel(Labels, index, -1)
@@ -1832,11 +1842,11 @@ function vape:LoadGUI()
 						local top = (not topLabel or (topLabel.Size.X.Offset < label.Size.X.Offset)) and 4 or 0
 						local bottom = (not bottomLabel or (bottomLabel.Size.X.Offset < label.Size.X.Offset)) and 4 or 0
 		
-						label.Color.Parent.Line.Visible = index ~= 1
-						label.Color.UICorner.TopLeftRadius = isRight and UDim.new() or UDim.new(0, index == 1 and 4 or 0)
-						label.Color.UICorner.TopRightRadius = isRight and UDim.new(0, index == 1 and 4 or 0) or UDim.new()
-						label.Color.UICorner.BottomLeftRadius = isRight and UDim.new() or UDim.new(0, index == #Labels and 4 or 0)
-						label.Color.UICorner.BottomRightRadius = isRight and UDim.new(0, index == #Labels and 4 or 0) or UDim.new()
+						label.Color.Parent.Line.Visible = index ~= firstIndex
+						label.Color.UICorner.TopLeftRadius = isRight and UDim.new() or UDim.new(0, index == firstIndex and 4 or 0)
+						label.Color.UICorner.TopRightRadius = isRight and UDim.new(0, index == firstIndex and 4 or 0) or UDim.new()
+						label.Color.UICorner.BottomLeftRadius = isRight and UDim.new() or UDim.new(0, index == lastIndex and 4 or 0)
+						label.Color.UICorner.BottomRightRadius = isRight and UDim.new(0, index == lastIndex and 4 or 0) or UDim.new()
 		
 						label.Background.UICorner.TopLeftRadius = UDim.new(0, top)
 						label.Background.UICorner.TopRightRadius = UDim.new(0, top)
@@ -7304,6 +7314,20 @@ components = {
 		inputbox.TextSize = 12
 		inputbox.TextXAlignment = Enum.TextXAlignment.Left
 		inputbox.Parent = holder
+		local autocomplete
+		if props.Player then
+			inputbox.ZIndex = 2
+			autocomplete = Instance.new('TextLabel')
+			autocomplete.BackgroundTransparency = 1
+			autocomplete.FontFace = uipallet.Font
+			autocomplete.Position = UDim2.fromOffset(8, 0)
+			autocomplete.Size = UDim2.new(1, -8, 1, 0)
+			autocomplete.Text = ''
+			autocomplete.TextColor3 = Color3.new(0.6, 0.6, 0.6)
+			autocomplete.TextSize = 12
+			autocomplete.TextXAlignment = Enum.TextXAlignment.Left
+			autocomplete.Parent = holder
+		end
 		props.Function = props.Function or function() end
 		
 		function component:Load(data)
@@ -7327,6 +7351,24 @@ components = {
 		textbox.MouseButton1Click:Connect(function()
 			inputbox:CaptureFocus()
 		end)
+		
+		if autocomplete then
+			inputbox:GetPropertyChangedSignal('Text'):Connect(function()
+				local plr = getPlayerFromText(inputbox.Text)
+				autocomplete.Text = plr and inputbox.Text..(plr:sub(#inputbox.Text + 1, #plr)) or ''
+			end)
+		
+			inputbox.Focused:Connect(function()
+				vape.Autocomplete = function()
+					local newText = getPlayerFromText(inputbox.Text) or inputbox.Text
+					task.spawn(function()
+						inputbox:GetPropertyChangedSignal('Text'):Wait()
+						inputbox.Text = newText
+						inputbox.CursorPosition = #newText + 1
+					end)
+				end
+			end)
+		end
 		
 		inputbox.FocusLost:Connect(function(enter)
 			component:SetValue(inputbox.Text, enter)

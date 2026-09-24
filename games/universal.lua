@@ -2040,12 +2040,12 @@ run(function()
 				end
 			end
 
-			root.Velocity *= Vector3.new(1, 0, 1)
+			root.AssemblyLinearVelocity *= Vector3.new(1, 0, 1)
 			root.CFrame += Vector3.new(0, YLevel - root.Position.Y, 0)
 		end,
 		Bounce = function()
 			Functions.Velocity()
-			entitylib.character.RootPart.Velocity += Vector3.new(0, ((os.clock() % BounceDelay.Value) / BounceDelay.Value > 0.5 and 1 or -1) * BounceLength.Value, 0)
+			entitylib.character.RootPart.AssemblyLinearVelocity += Vector3.new(0, ((os.clock() % BounceDelay.Value) / BounceDelay.Value > 0.5 and 1 or -1) * BounceLength.Value, 0)
 		end,
 		Floor = function()
 			Platform.CFrame = down ~= 0 and CFrame.identity or entitylib.character.RootPart.CFrame + Vector3.new(0, -(entitylib.character.HipHeight + 0.5), 0)
@@ -2375,7 +2375,7 @@ run(function()
 				root.AssemblyLinearVelocity = Vector3.new(root.AssemblyLinearVelocity.X, Value.Value, root.AssemblyLinearVelocity.Z)
 			elseif Mode.Value == 'Impulse' then
 				entitylib.character.Humanoid:ChangeState(Enum.HumanoidStateType.Jumping)
-				task.delay(0, function()
+				runService.Heartbeat:Once(function()
 					root:ApplyImpulse(Vector3.new(0, Value.Value - root.AssemblyLinearVelocity.Y, 0) * root.AssemblyMass)
 				end)
 			else
@@ -2581,7 +2581,6 @@ run(function()
 				Platform.Anchored = true
 				Platform.Size = Vector3.new(3, 1, 3)
 				Platform.Transparency = 1
-				Platform.Parent = gameCamera
 	
 				Jesus:Clean(Platform)
 				Jesus:Clean(runService.PreSimulation:Connect(function()
@@ -2591,8 +2590,9 @@ run(function()
 	
 						if ray and ray.Material == Enum.Material.Water then
 							Platform.CFrame = CFrame.new(ray.Position)
+							Platform.Parent = workspace
 						else
-							Platform.CFrame = CFrame.new(10000, 10000, 10000)
+							Platform.Parent = nil
 						end
 					end
 				end))
@@ -3107,7 +3107,6 @@ run(function()
 	local rayCheck = RaycastParams.new()
 	rayCheck.RespectCanCollide = true
 	local overlapCheck = OverlapParams.new()
-	overlapCheck.MaxParts = 9e9
 	local modified, fflag = {}
 	local teleported
 	
@@ -3148,8 +3147,8 @@ run(function()
 			end
 		end,
 		Character = function()
-			for _, part in lplr.Character:GetDescendants() do
-				if part:IsA('BasePart') and part.CanCollide and (not Spider.Enabled or SpiderShift) then
+			for _, part in lplr.Character:QueryDescendants('BasePart') do
+				if part.CanCollide and (not Spider.Enabled or SpiderShift) then
 					modified[part] = true
 					part.CanCollide = Spider.Enabled and not SpiderShift
 				end
@@ -5866,6 +5865,7 @@ run(function()
 							repeat
 								local oldkey = key
 								key, val = next(stuff, key)
+	
 								if val == false then
 									table.remove(stuff, key)
 									key = oldkey
@@ -5880,6 +5880,7 @@ run(function()
 						if not Title.Enabled then
 							table.remove(stuff, 1)
 						end
+	
 						infolabel.Text = table.concat(stuff, '\n')
 						infolabel.FontFace = FontOption.Value
 						infolabel.TextSize = TextSize.Value
@@ -7017,7 +7018,12 @@ run(function()
 						return
 					end
 	
-					return string.match(game:GetObjects('rbxassetid://'..IDBox.Value)[1].AnimationId, '%?id=(%d+)')
+					local info = marketplaceService:GetProductInfo(tonumber(IDBox.Value))
+					if not info or info.AssetTypeId ~= 24 then
+						return string.match(game:GetObjects('rbxassetid://'..IDBox.Value)[1].AnimationId, '%?id=(%d+)')
+					else
+						return IDBox.Value
+					end
 				end)
 	
 				anim = Instance.new('Animation')
@@ -7444,25 +7450,32 @@ run(function()
 	local Role
 	
 	local function getRole(plr, id)
-		local suc, res
+		local success, role
 		for _ = 1, 3 do
-			suc, res = pcall(function()
+			success, role = pcall(function()
 				return plr:GetRankInGroup(id)
 			end)
-			if suc then break end
+	
+			if success then
+				break
+			end
 		end
-		return suc and res or 0
+	
+		return success and role or 0
 	end
 	
 	local function getLowestStaffRole(roles)
-		local highest = math.huge
-		for _, v in roles do
-			local low = v.Name:lower()
-			if (low:find('admin') or low:find('mod') or low:find('dev')) and v.Rank < highest then
-				highest = v.Rank
+		local modRole = math.huge
+	
+		for _, role in roles do
+			local name = role.Name:lower()
+	
+			if (name:find('admin') or name:find('mod') or name:find('dev')) and role.Rank < modRole then
+				modRole = role.Rank
 			end
 		end
-		return highest
+	
+		return modRole
 	end
 	
 	local function playerAdded(plr)
@@ -7555,9 +7568,9 @@ run(function()
 	Mode = StaffDetector:CreateDropdown({
 		Name = 'Mode',
 		List = {'Uninject', 'ServerHop', 'Profile', 'AutoConfig', 'Notify'},
-		Function = function(val)
+		Function = function(value)
 			if Profile.Object then
-				Profile.Object.Visible = val == 'Profile'
+				Profile.Object.Visible = value == 'Profile'
 			end
 		end
 	})
@@ -7587,16 +7600,12 @@ run(function()
 	vape.Categories.World:CreateModule({
 		Name = 'Anti-AFK',
 		Function = function(callback)
-			if callback then
-				for _, connection in getconnections(lplr.Idled) do
-					table.insert(connections, connection)
+			for _, connection in getconnections(lplr.Idled) do
+				if callback then
 					connection:Disable()
-				end
-			else
-				for _, connection in connections do
+				else
 					connection:Enable()
 				end
-				table.clear(connections)
 			end
 		end,
 		Tooltip = 'Lets you stay ingame without getting kicked'
@@ -7711,17 +7720,23 @@ run(function()
 					Freecam:Clean(function()
 						fcScript:SetAttribute('FreecamEnabled', false)
 					end)
+	
 					return
 				end
 	
 				repeat
-					task.wait(0.1)
-	
 					for _, connection in getconnections(gameCamera:GetPropertyChangedSignal('CameraType')) do
 						if connection.Function then
 							module = debug.getupvalue(connection.Function, 1)
+							break
 						end
 					end
+	
+					if module or not Freecam.Enabled then
+						break
+					end
+	
+					task.wait(0.1)
 				until module or not Freecam.Enabled
 	
 				if module and module.activeCameraController and Freecam.Enabled then
@@ -8019,8 +8034,10 @@ end)
 run(function()
 	local Wallhop
 	local Offset
+	local FPSCap
 	local params = OverlapParams.new()
 	params.RespectCanCollide = true
+	local oldfps
 	local oldvec
 	local timeout = os.clock()
 	local set
@@ -8065,12 +8082,22 @@ run(function()
 		Name = 'Wallhop',
 		Function = function(callback)
 			if callback then
+				if FPSCap.Enabled then
+					oldfps = getfpscap()
+					setfpscap(60)
+				end
+	
 				if workspace.AuthorityMode == Enum.AuthorityMode.Server then
 					Wallhop:Clean(runService:BindToSimulation(doCheck))
 				else
 					Wallhop:Clean(runService.RenderStepped:Connect(doCheck))
 				end
 			else
+				if oldfps then
+					setfpscap(oldfps)
+					oldfps = nil
+				end
+	
 				set = nil
 			end
 		end,
@@ -8082,6 +8109,16 @@ run(function()
 		Max = 45,
 		Default = 45,
 		Suffix = 'degrees'
+	})
+	FPSCap = Wallhop:CreateToggle({
+		Name = 'FPS Cap',
+		Function = function(callback)
+			if Wallhop.Enabled then
+				Wallhop:Toggle()
+				Wallhop:Toggle()
+			end
+		end,
+		Tootip = 'Set the FPS to 60 while the module is enabled.'
 	})
 end)
 
@@ -8109,6 +8146,7 @@ run(function()
 				for part in modified do
 					part.LocalTransparencyModifier = 0
 				end
+	
 				table.clear(modified)
 			end
 		end,

@@ -639,6 +639,7 @@ run(function()
 		ItemSystemController = require(replicatedStorage.Game.ItemSystem.ItemSystem),
 		LightningUtils = require(replicatedStorage.Game.LightningUtils),
 		PlayerUtils = require(replicatedStorage.Game.PlayerUtils),
+		PlasmaController = require(replicatedStorage.Game.Item.PlasmaGun),
 		TeamChooseController = require(replicatedStorage.TeamSelect.TeamChooseUI),
 		VehicleController = require(replicatedStorage.Vehicle.VehicleUtils),
 		VehicleSystem = require(replicatedStorage.Game.VehicleSystem)
@@ -868,6 +869,7 @@ run(function()
 	local CircleObject
 	local rand = Random.new()
 	local old
+	local oldplasma
 	local ProjectileRaycast = RaycastParams.new()
 	ProjectileRaycast.RespectCanCollide = true
 	
@@ -970,6 +972,24 @@ run(function()
 		return old(...)
 	end
 	
+	local function HookPlasma(...)
+		local item = ...
+	
+		if item.Local then
+			shootTimer = os.clock() + 0.1
+			local entity, targetPart, origin = getTarget(item.Tip.CFrame, item.Config.Range)
+	
+			if entity then
+				targetinfo.Targets[entity] = tick() + 1
+				item.TipDirection = CFrame.lookAt(origin.Position, targetPart.Position).LookVector
+				aimTimer = os.clock() + 0.3
+				aimVec = targetPart.Position
+			end
+		end
+	
+		return oldplasma(...)
+	end
+	
 	SilentAim = vape.Categories.Combat:CreateModule({
 		Name = 'SilentAim',
 		Function = function(callback)
@@ -986,6 +1006,10 @@ run(function()
 					return Hook(...)
 				end)
 	
+				oldplasma = hookfunction(jb.PlasmaController.ShootOther, function(...)
+					return HookPlasma(...)
+				end)
+	
 				repeat
 					if CircleObject then
 						CircleObject.Position = getMousePosition()
@@ -997,6 +1021,11 @@ run(function()
 				if old then
 					restorefunction(jb.GunController.ShootOther)
 					old = nil
+				end
+	
+				if oldplasma then
+					restorefunction(jb.PlasmaController.ShootOther)
+					oldplasma = nil
 				end
 			end
 		end,

@@ -38,8 +38,9 @@ local Spring = {}
 local TracerHook = {Hooks = {}}
 local VehicleWallbang = {Enabled = false}
 local oldshoot, oldequip
-local aimTimer, shootTimer, aimVec = os.clock(), os.clock()
-local arrestCooldown = os.clock()
+local aimTimer, shootTimer, aimVec = 0, 0
+local arrestCooldown = 0
+local teamCooldown = 0
 local tempTargets = {}
 local gamepasses = {}
 
@@ -91,6 +92,13 @@ end
 
 local function notif(...)
 	return vape:CreateNotification(...)
+end
+
+local function pickTeam(button)
+	if teamCooldown < os.clock() then
+		firesignal(button.MouseButton1Click)
+		teamCooldown = os.clock() + 0.1
+	end
 end
 
 local function removeTags(str)
@@ -1124,6 +1132,30 @@ run(function()
 				modified[part] = {part.CanCollide, part.CanQuery}
 			end
 	
+			if (part:IsA('Seat') or part:IsA('VehicleSeat')) and part.Name == part.ClassName then
+				local connection
+				local prox = Instance.new('ProximityPrompt')
+				prox.ActionText = 'Enter'
+				prox.Enabled = not part.Occupant
+				prox.MaxActivationDistance = 8
+				prox.RequiresLineOfSight = false
+				prox.Parent = part
+	
+				prox.Triggered:Connect(function()
+					if entitylib.isAlive then
+						part:Sit(entitylib.character.Humanoid)
+					end
+				end)
+	
+				prox.Destroying:Connect(function()
+					connection:Disconnect()
+				end)
+	
+				connection = part:GetPropertyChangedSignal('Occupant'):Connect(function()
+					prox.Enabled = not part.Occupant
+				end)
+			end
+	
 			part.CanCollide = false
 			part.CanTouch = false
 		end
@@ -1142,6 +1174,11 @@ run(function()
 					part.CanCollide = value[1]
 					part.CanTouch = value[2]
 				end
+	
+				for _, prompt in workspace.CarContainer:QueryDescendants('ProximityPrompt') do
+					prompt:Destroy()
+				end
+	
 				table.clear(modified)
 			end
 		end,
@@ -1263,9 +1300,9 @@ run(function()
 					if entitylib.isAlive then
 						local root = entitylib.character.RootPart
 						local diff = math.clamp(root.Position.Y, -10, 179.99) - root.Position.Y
-						root.CFrame += Vector3.new(0, diff, 0)
 	
-						if math.abs(diff) > 0 and root.AssemblyLinearVelocity.Y > 0 then
+						if math.abs(diff) > 0 then
+							root.CFrame += Vector3.new(0, diff, 0)
 							root.AssemblyLinearVelocity *= Vector3.new(1, 0, 1)
 						end
 					end
@@ -1660,7 +1697,7 @@ run(function()
 	})
 	
 	local function getTarget(seat)
-		if tempList[seat] and tempList[seat].Health > 0 and not tempList[seat].Humanoid.Sit then
+		if tempList[seat] and tempList[seat].Health > 0 and not (tempList[seat].Humanoid.Sit and tempList[seat].Humanoid.SeatPart.Anchored) then
 			return tempList[seat]
 		end
 	
@@ -1675,7 +1712,7 @@ run(function()
 				if not select(2, whitelist:get(entity.Player)) then continue end
 				if entity.Player.Team == teams.Neutral then continue end
 				if Mode.Value ~= 'All' and not table.find(List.ListEnabled, entity.Player.Name) then continue end
-				if not (entity.Humanoid.Sit and entity.Humanoid.SeatPart.Anchored) and entity.Humanoid.Health > 0 and (os.clock() - entity.SpawnTime) > 5 then
+				if not (entity.Humanoid.Sit and entity.Humanoid.SeatPart.Anchored) and entity.Humanoid.Health > 0 and (os.clock() - entity.SpawnTime) > 2 then
 					lastFling[entity.Player.Name] = os.clock()
 					tempList[seat] = entity
 					table.clear(cloned)
@@ -1719,7 +1756,7 @@ run(function()
 						if gui then
 							for _, holder in gui:GetChildren() do
 								if holder.Button.AutoButtonColor then
-									firesignal(holder.Button.MouseButton1Click)
+									pickTeam(holder.Button)
 									break
 								end
 							end
@@ -1768,7 +1805,7 @@ run(function()
 							dir = math.clamp(dir + (diff * dt * 24), -12, 14)
 						end
 	
-						if Movement.Enabled and ((root.Position - Vector3.new(633, 98, 2489)).Magnitude < 40 or (os.clock() - entitylib.character.SpawnTime) < 0.4) then
+						if Movement.Enabled and ((root.Position - Vector3.new(633, 98, 2489)).Magnitude < 40 or (os.clock() - entitylib.character.SpawnTime) < 2) then
 							root.CFrame = CFrame.new(Vector3.new(610 + dir, 90, 2494))
 							root.AssemblyLinearVelocity = Vector3.new(24, 0, 0)
 						end
@@ -2647,7 +2684,7 @@ run(function()
 				if gui then
 					for _, holder in gui:GetChildren() do
 						if holder.Button.AutoButtonColor then
-							firesignal(holder.Button.MouseButton1Click)
+							pickTeam(holder.Button)
 							break
 						end
 					end
