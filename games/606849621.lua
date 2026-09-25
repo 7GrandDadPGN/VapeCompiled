@@ -404,6 +404,10 @@ run(function()
 						if pmag > entitysettings.RangePosition then continue end
 					end
 
+					if entitysettings.Arrest then
+						if entity.Character:GetAttribute('HasHandcuffs') then continue end
+					end
+
 					table.insert(sortingTable, {
 						Entity = entity,
 						Magnitude = entity.Target and -1 or mag
@@ -438,6 +442,10 @@ run(function()
 				local mag = (entity[entitysettings.Part].Position - localPosition).Magnitude
 				if mag > entitysettings.Range then continue end
 				if entitylib.isVulnerable(entity, entitysettings.AttackCheck) then
+					if entitysettings.Arrest then
+						if entity.Character:GetAttribute('HasHandcuffs') then continue end
+					end
+
 					table.insert(sortingTable, {
 						Entity = entity,
 						Magnitude = entity.Target and -1 or mag
@@ -473,6 +481,10 @@ run(function()
 				local mag = (entity[entitysettings.Part].Position - localPosition).Magnitude
 				if mag > entitysettings.Range then continue end
 				if entitylib.isVulnerable(entity, entitysettings.AttackCheck) then
+					if entitysettings.Arrest then
+						if entity.Character:GetAttribute('HasHandcuffs') then continue end
+					end
+
 					table.insert(sortingTable, {
 						Entity = entity,
 						Magnitude = entity.Target and -1 or mag
@@ -629,6 +641,7 @@ run(function()
 	jb = {
 		AlexChassis = require(replicatedStorage.Module.AlexChassis),
 		Audio = require(replicatedStorage.Std.Audio),
+		Boat = require(replicatedStorage.Game.Boat.Boat),
 		BulletEmitter = require(replicatedStorage.Game.ItemSystem.BulletEmitter),
 		CircleAction = require(replicatedStorage.Module.UI).CircleAction,
 		FallingController = require(replicatedStorage.Game.Falling),
@@ -863,6 +876,7 @@ run(function()
 	local HitChance
 	local HeadshotChance
 	local Wallbang
+	local IgnoreArrest
 	local CircleColor
 	local CircleTransparency
 	local CircleFilled
@@ -895,7 +909,8 @@ run(function()
 			Part = targetPart,
 			Origin = origin.Position,
 			Players = Target.Players.Enabled,
-			NPCs = Target.NPCs.Enabled
+			NPCs = Target.NPCs.Enabled,
+			Arrest = IgnoreArrest.Enabled
 		})
 	
 		if entity then
@@ -1081,6 +1096,10 @@ run(function()
 		end,
 		Tooltip = 'Allow you to shoot people through walls when specific conditions are met.\n(If the entity has a valid hitbox position exposed or if the shoot position can be moved past walls (eg hugging walls))'
 	})
+	IgnoreArrest = SilentAim:CreateToggle({
+		Name = 'Ignore arrested',
+		Tooltip = 'Prevent SilentAim from targeting people that have already been arrested.'
+	})
 	SilentAim:CreateToggle({
 		Name = 'Range Circle',
 		Function = function(callback)
@@ -1185,12 +1204,13 @@ run(function()
 							Players = true,
 							Part = 'RootPart',
 							Range = Range.Value,
-							Origin = serverPos and serverPos.Value or nil
+							Origin = serverPos and serverPos.Value or nil,
+							Arrest = true
 						})
 	
 						for _, entity in entities do
 							if entity.Player and isIllegal(entity) then
-								if not entity.Character:GetAttribute('InVehicle') and not entity.Character:GetAttribute('HasHandcuffs') and not target and cooldown < os.clock() then
+								if not entity.Character:GetAttribute('InVehicle') and not target and cooldown < os.clock() then
 									target = entity.Player.Name
 								end
 							end
@@ -1525,12 +1545,13 @@ run(function()
 							local entities = entitylib.AllPosition({
 								Players = true,
 								Part = 'RootPart',
-								Range = Range.Value
+								Range = Range.Value,
+								Arrest = true
 							})
 	
 							if (taser:GetAttribute('NextUse') or 0) < os.clock() then
 								for _, entity in entities do
-									if isIllegal(entity) and (entity.VehicleTimer or 0) < os.clock() and not (entity.Character:GetAttribute('HasHandcuffs') or (VehicleCheck.Enabled and entity.Character:GetAttribute('InVehicle')) or entity.Head.CanCollide) then
+									if isIllegal(entity) and (entity.VehicleTimer or 0) < os.clock() and not ((VehicleCheck.Enabled and entity.Character:GetAttribute('InVehicle')) or entity.Head.CanCollide) then
 										drawTaser(equipped and equipped.Tip or entitylib.character.RootPart, entity.RootPart.Position)
 										taser:SetAttribute('LastUsedAt', os.clock())
 										taser:SetAttribute('NextUse', os.clock() + 10)
@@ -2159,7 +2180,9 @@ end)
 run(function()
 	local VehicleSpeed
 	local Value
+	local Boat
 	local old
+	local oldboat
 	
 	VehicleSpeed = vape.Categories.Blatant:CreateModule({
 		Name = 'VehicleSpeed',
@@ -2170,10 +2193,23 @@ run(function()
 					self.GarageEngineSpeed = Value.Value
 					return old(...)
 				end)
+	
+				if Boat.Enabled then
+					oldboat = hookfunction(jb.Boat.UpdatePhysics, function(...)
+						local self = ...
+						self.SpringAccelp *= math.max(Value.Value / 10, 1)
+						return oldboat(...)
+					end)
+				end
 			else
 				if old then
 					restorefunction(jb.AlexChassis.Update)
 					old = nil
+				end
+	
+				if oldboat then
+					restorefunction(jb.Boat.UpdatePhysics)
+					oldboat = nil
 				end
 			end
 		end,
@@ -2184,6 +2220,17 @@ run(function()
 		Min = 0,
 		Max = 30,
 		Default = 30
+	})
+	Boat = VehicleSpeed:CreateToggle({
+		Name = 'Modify Boats',
+		Default = true,
+		Function = function()
+			if VehicleSpeed.Enabled then
+				VehicleSpeed:Toggle()
+				VehicleSpeed:Toggle()
+			end
+		end,
+		Tooltip = 'Allow you to adjust the speed of boats'
 	})
 	
 end)
