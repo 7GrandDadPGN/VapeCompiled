@@ -52,9 +52,6 @@ local assetService = cloneref(game:GetService('AssetService'))
 local coreGui = cloneref(game:GetService('CoreGui'))
 local stats = cloneref(game:GetService('Stats'))
 
-local isnetworkowner = identifyexecutor and table.find({'AWP', 'Nihon'}, ({identifyexecutor()})[1]) and isnetworkowner or function()
-	return true
-end
 local gameCamera = workspace.CurrentCamera or workspace:FindFirstChildWhichIsA('Camera')
 local lplr = playersService.LocalPlayer
 
@@ -940,6 +937,8 @@ run(function()
 	local CircleFilled
 	local CircleObject
 	local RightClick
+	local KeyToggle
+	local Key
 	local ShowTarget
 	local moveConst = Vector2.new(1, 0.77) * math.rad(0.5)
 	
@@ -958,15 +957,25 @@ run(function()
 			end
 	
 			if callback then
-				local ent
-				local rightClicked = not RightClick.Enabled or inputService:IsMouseButtonPressed(1)
+				local entity
+				local rightClicked = inputService:IsMouseButtonPressed(1)
+				local pressed = false
+	
 				AimAssist:Clean(runService.RenderStepped:Connect(function(dt)
 					if CircleObject then
 						CircleObject.Position = inputService:GetMouseLocation()
 					end
 	
-					if rightClicked and not vape.gui.ScaledGui.ClickGui.Visible then
-						ent = entitylib.EntityMouse({
+					if not vape.gui.ScaledGui.ClickGui.Visible and inputService.MouseBehavior == Enum.MouseBehavior.LockCenter then
+						if RightClick.Enabled and not rightClicked then
+							return
+						end
+	
+						if KeyToggle.Enabled and not pressed then
+							return
+						end
+	
+						entity = entitylib.EntityMouse({
 							Range = FOV.Value,
 							Part = Part.Value,
 							Players = Targets.Players.Enabled,
@@ -975,13 +984,13 @@ run(function()
 							Origin = gameCamera.CFrame.Position
 						})
 	
-						if ent then
+						if entity then
 							local facing = gameCamera.CFrame.LookVector
-							local new = (ent[Part.Value].Position - gameCamera.CFrame.Position).Unit
+							local new = (entity[Part.Value].Position - gameCamera.CFrame.Position).Unit
 							new = new == new and new or Vector3.zero
 	
 							if ShowTarget.Enabled then
-								targetinfo.Targets[ent] = tick() + 1
+								targetinfo.Targets[entity] = tick() + 1
 							end
 	
 							if new ~= Vector3.zero then
@@ -996,20 +1005,21 @@ run(function()
 					end
 				end))
 	
-				if RightClick.Enabled then
-					AimAssist:Clean(inputService.InputBegan:Connect(function(input)
-						if input.UserInputType == Enum.UserInputType.MouseButton2 then
-							ent = nil
-							rightClicked = true
-						end
-					end))
+				AimAssist:Clean(Key.Triggered:Connect(function(isDown)
+					pressed = KeyToggle.Enabled and isDown
+				end))
 	
-					AimAssist:Clean(inputService.InputEnded:Connect(function(input)
-						if input.UserInputType == Enum.UserInputType.MouseButton2 then
-							rightClicked = false
-						end
-					end))
-				end
+				AimAssist:Clean(inputService.InputBegan:Connect(function(input)
+					if input.UserInputType == Enum.UserInputType.MouseButton2 then
+						rightClicked = true
+					end
+				end))
+	
+				AimAssist:Clean(inputService.InputEnded:Connect(function(input)
+					if input.UserInputType == Enum.UserInputType.MouseButton2 then
+						rightClicked = false
+					end
+				end))
 			end
 		end,
 		Tooltip = 'Smoothly aims to closest valid target'
@@ -1095,12 +1105,21 @@ run(function()
 	})
 	RightClick = AimAssist:CreateToggle({
 		Name = 'Require right click',
-		Function = function()
-			if AimAssist.Enabled then
-				AimAssist:Toggle()
-				AimAssist:Toggle()
-			end
-		end
+		Tooltip = 'Only activate when holding down right click'
+	})
+	KeyToggle = AimAssist:CreateToggle({
+		Name = 'Require key',
+		Function = function(callback)
+			Key.Object.Visible = callback
+		end,
+		Tooltip = 'Only activate when holding down a certain key'
+	})
+	Key = AimAssist:CreateBind({
+		Name = 'Hold Key',
+		Default = {'G'},
+		Hold = true,
+		Darker = true,
+		Visible = false
 	})
 	ShowTarget = AimAssist:CreateToggle({
 		Name = 'Show target info'
@@ -5833,10 +5852,10 @@ run(function()
 		Position = UDim2.fromOffset(12, 14),
 		Function = function(callback)
 			if callback then
-				local teleportedServers
+				local teleported
 				SessionInfo:Clean(playersService.LocalPlayer.OnTeleport:Connect(function()
-					if not teleportedServers then
-						teleportedServers = true
+					if not teleported then
+						teleported = true
 						queue_on_teleport("shared.vapesessioninfo = '"..httpService:JSONEncode(vape.Libraries.sessioninfo.Objects).."'")
 					end
 				end))
@@ -6983,10 +7002,10 @@ run(function()
 	local track, anim
 	
 	local function playAnimation(char)
-		local animcheck = track
-		if animcheck then
+		local oldTrack = track
+		if oldTrack then
 			track = nil
-			animcheck:Stop()
+			oldTrack:Stop()
 		end
 	
 		local success, result = pcall(function()
@@ -6994,13 +7013,13 @@ run(function()
 		end)
 	
 		if success then
-			local currentanim = track
+			local comp = track
 			track.Priority = Enum.AnimationPriority[Priority.Value]
 			track:Play()
 			track:AdjustSpeed(Speed.Value)
 	
 			AnimationPlayer:Clean(track.Stopped:Connect(function()
-				if currentanim == track then
+				if comp == track then
 					track:Play()
 				end
 			end))
@@ -7306,7 +7325,7 @@ run(function()
 	local function LocalAdded(char)
 		for _, prop in {'CFrame', 'Velocity'} do
 			for _, connection in getconnections(char.RootPart:GetPropertyChangedSignal(prop)) do
-				hookfunction(connection.Function, function() end)
+				connection:Disable()
 			end
 		end
 	end
@@ -8008,13 +8027,13 @@ run(function()
 					if entitylib.isAlive then
 						rayCheck.FilterDescendantsInstances = {lplr.Character, gameCamera}
 						local root = entitylib.character.RootPart
-						local movedir = root.Position + vec
-						local ray = workspace:Raycast(movedir, Vector3.new(0, -15, 0), rayCheck)
+						local newPos = root.Position + vec
+						local ray = workspace:Raycast(newPos, Vector3.new(0, -15, 0), rayCheck)
 	
 						if not ray then
 							local check = workspace:Blockcast(root.CFrame, Vector3.new(3, 1, 3), Vector3.new(0, -(entitylib.character.HipHeight + 1), 0), rayCheck)
 							if check then
-								vec = (check.Instance:GetClosestPointOnSurface(movedir) - root.Position) * Vector3.new(1, 0, 1)
+								vec = (check.Instance:GetClosestPointOnSurface(newPos) - root.Position) * Vector3.new(1, 0, 1)
 							end
 						end
 					end
