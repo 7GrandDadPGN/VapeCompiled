@@ -424,15 +424,15 @@ run(function()
 			if CircleObject then
 				CircleObject.Visible = callback
 			end
-			if callback then 
+			if callback then
 				repeat
 					local dt = task.wait()
 					if not AimAssist.Enabled then break end
-					if CircleObject then 
-						CircleObject.Position = inputService:GetMouseLocation() 
+					if CircleObject then
+						CircleObject.Position = inputService:GetMouseLocation()
 					end
 	
-					if inputService:IsMouseButtonPressed(Enum.UserInputType.MouseButton2) then 
+					if inputService:IsMouseButtonPressed(Enum.UserInputType.MouseButton2) then
 						local origin = entitylib.isAlive and frontlines.Main.globals.fpv_sol_instances.camera_bone.WorldPosition or Vector3.zero
 						local ent = entitylib.EntityMouse({
 							Range = FOV.Value,
@@ -442,7 +442,7 @@ run(function()
 							Origin = origin
 						})
 	
-						if ent then 
+						if ent then
 							local gun = frontlines.Main.globals.fpv_sol_equipment.curr_equipment
 							if gun and gun.fire_params then
 								rayCheck.FilterDescendantsInstances = {gameCamera, ent.Character}
@@ -450,11 +450,11 @@ run(function()
 								local velo = gun.fire_params.muzzle_velocity
 								local targetpos = ent.RootPart.Root_M.Spine1_M.Spine2_M.Chest_M.Neck_M.Head_M.WorldCFrame.Position
 								local calc = prediction.SolveTrajectory(origin, velo, workspace.Gravity, targetpos, Vector3.zero, workspace.Gravity, ent.HipHeight, nil, rayCheck)
-								
-								if calc then 
+	
+								if calc then
 									local pos = gameCamera:WorldToViewportPoint(calc)
 									local localmouse = (inputService:GetMouseLocation() - Vector2.new(pos.X, pos.Y)) * dt * (Speed.Value / 10000)
-									targetinfo.Targets[ent] = tick() + 1
+									targetinfo.Targets[ent] = os.clock() + 1
 									frontlines.Main.exe_set(frontlines.Main.exe_set_t.CTRL_SOL_ATT_ROT, localmouse.Y, localmouse.X)
 								end
 							end
@@ -506,13 +506,13 @@ run(function()
 		end
 	})
 	CircleColor = AimAssist:CreateColorSlider({
-		Name = 'Circle Color', 
+		Name = 'Circle Color',
 		Function = function(hue, sat, val)
 			if CircleObject then
 				CircleObject.Color = Color3.fromHSV(hue, sat, val)
 			end
-		end, 
-		Darker = true, 
+		end,
+		Darker = true,
 		Visible = false
 	})
 	CircleTransparency = AimAssist:CreateSlider({
@@ -530,13 +530,13 @@ run(function()
 		Visible = false
 	})
 	CircleFilled = AimAssist:CreateToggle({
-		Name = 'Circle Filled', 
+		Name = 'Circle Filled',
 		Function = function(callback)
 			if CircleObject then
 				CircleObject.Filled = callback
 			end
-		end, 
-		Darker = true, 
+		end,
+		Darker = true,
 		Visible = false
 	})
 	
@@ -583,7 +583,7 @@ run(function()
 		})
 	
 		if entity then
-			targetinfo.Targets[entity] = tick() + 1
+			targetinfo.Targets[entity] = os.clock() + 1
 		end
 	
 		return entity, entity and entity[targetPart]
@@ -975,7 +975,7 @@ run(function()
 								local angle = math.acos(localfacing:Dot((delta * Vector3.new(1, 0, 1)).Unit))
 								if angle > (math.rad(Angle.Value) / 2) then continue end
 								table.insert(attacked, {Entity = v, Check = delta.Magnitude > AttackRange.Value and BoxSwingColor or BoxAttackColor})
-								targetinfo.Targets[v] = tick() + 1
+								targetinfo.Targets[v] = os.clock() + 1
 	
 								if delta.Magnitude > AttackRange.Value then continue end
 								didattack = knifecheck

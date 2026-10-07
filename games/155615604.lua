@@ -816,7 +816,7 @@ run(function()
 		})
 
 		if entity then
-			targetinfo.Targets[entity] = tick() + 1
+			targetinfo.Targets[entity] = os.clock() + 1
 		end
 
 		return entity, entity and entity[targetPart], origin
@@ -2015,7 +2015,7 @@ run(function()
 									continue
 								end
 	
-								targetinfo.Targets[entity] = tick() + 1
+								targetinfo.Targets[entity] = os.clock() + 1
 								table.insert(attacked, {
 									Entity = entity,
 									Check = BoxAttackColor

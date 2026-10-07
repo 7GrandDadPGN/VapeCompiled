@@ -352,7 +352,7 @@ run(function()
 									Entity = v,
 									Check = delta.Magnitude > AttackRange.Value and BoxSwingColor or BoxAttackColor
 								})
-								targetinfo.Targets[v] = tick() + 1
+								targetinfo.Targets[v] = os.clock() + 1
 								if Block.Enabled then
 									if bd.Entity.LocalEntity.IsBlocking then continue end
 								end
@@ -673,7 +673,7 @@ run(function()
 	        local calc = prediction.SolveTrajectory(offsetpos.Position, 180, 60, plr[TargetPart.Value].Position, plr[TargetPart.Value].Velocity, workspace.Gravity, plr.HipHeight, nil, rayCheck)
 	
 	        if calc then
-	            targetinfo.Targets[plr] = tick() + 1
+	            targetinfo.Targets[plr] = os.clock() + 1
 	            return offsetpos.Position + CFrame.new(offsetpos.Position, calc).LookVector * 100
 	        end
 	    end

@@ -729,7 +729,7 @@ run(function()
 			})
 	
 			if ent then
-				targetinfo.Targets[ent] = tick() + 1
+				targetinfo.Targets[ent] = os.clock() + 1
 				return CFrame.lookAt(gameCamera.CFrame.Position, ent.Head.Position).LookVector
 			end
 		end
@@ -1158,7 +1158,7 @@ run(function()
 								Check = BoxAttackColor
 							})
 	
-							targetinfo.Targets[ent] = tick() + 1
+							targetinfo.Targets[ent] = os.clock() + 1
 							if AutoSwing.Enabled then
 								task.spawn(function()
 									redline.ActionFunction(redline[redline.ActionController], 'MELEE').Pressed:Fire()
