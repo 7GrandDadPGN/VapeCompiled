@@ -3817,10 +3817,10 @@ run(function()
 	local Folder = Instance.new('Folder')
 	Folder.Parent = vape.gui
 	
-	local function Added(ent)
-		if not Targets.Players.Enabled and ent.Player then return end
-		if not Targets.NPCs.Enabled and ent.NPC then return end
-		if Teammates.Enabled and (not ent.Targetable) and (not ent.Friend) and (not ent.Friend) then return end
+	local function Added(entity)
+		if not Targets.Players.Enabled and entity.Player then return end
+		if not Targets.NPCs.Enabled and entity.NPC then return end
+		if Teammates.Enabled and (not entity.Targetable) and (not entity.Friend) and (not entity.Friend) then return end
 		if vape.ThreadFix then
 			setthreadidentity(8)
 		end
@@ -3833,46 +3833,46 @@ run(function()
 		arrow.BorderSizePixel = 0
 		arrow.Visible = false
 		arrow.Image = getvapeasset('newvape/assets/new/arrow.png')
-		arrow.ImageColor3 = entitylib.getEntityColor(ent) or Color3.fromHSV(Color.Hue, Color.Sat, Color.Value)
+		arrow.ImageColor3 = entitylib.getEntityColor(entity) or Color3.fromHSV(Color.Hue, Color.Sat, Color.Value)
 		arrow.Parent = Folder
-		Reference[ent] = arrow
+		Reference[entity] = arrow
 	end
 	
-	local function Removed(ent)
-		local v = Reference[ent]
-		if v then
+	local function Removed(entity)
+		local enty = Reference[entity]
+		if entry then
 			if vape.ThreadFix then
 				setthreadidentity(8)
 			end
 	
-			Reference[ent] = nil
-			v:Destroy()
+			Reference[entity] = nil
+			entry:Destroy()
 		end
 	end
 	
 	local function ColorFunc(hue, sat, val)
 		local color = Color3.fromHSV(hue, sat, val)
-		for ent, EntityArrow in Reference do
-			EntityArrow.ImageColor3 = entitylib.getEntityColor(ent) or color
+		for entity, entry in Reference do
+			entry.ImageColor3 = entitylib.getEntityColor(entity) or color
 		end
 	end
 	
 	local function Loop()
-		for ent, arrow in Reference do
+		for entity, entry in Reference do
 			if Distance.Enabled then
-				local distance = entitylib.isAlive and (entitylib.character.RootPart.Position - ent.RootPart.Position).Magnitude or math.huge
+				local distance = entitylib.isAlive and (entitylib.character.RootPart.Position - entity.RootPart.Position).Magnitude or math.huge
 				if distance < DistanceLimit.ValueMin or distance > DistanceLimit.ValueMax then
-					arrow.Visible = false
+					entry.Visible = false
 					continue
 				end
 			end
 	
-			local _, rootVis = gameCamera:WorldToScreenPoint(ent.RootPart.Position)
-			arrow.Visible = not rootVis
+			local _, rootVis = gameCamera:WorldToScreenPoint(entity.RootPart.Position)
+			entry.Visible = not rootVis
 			if rootVis then continue end
 	
-			local dir = CFrame.lookAlong(gameCamera.CFrame.Position, gameCamera.CFrame.LookVector * Vector3.new(1, 0, 1)):PointToObjectSpace(ent.RootPart.Position)
-			arrow.Rotation = math.deg(math.atan2(dir.Z, dir.X))
+			local dir = CFrame.lookAlong(gameCamera.CFrame.Position, gameCamera.CFrame.LookVector * Vector3.new(1, 0, 1)):PointToObjectSpace(entity.RootPart.Position)
+			entry.Rotation = math.deg(math.atan2(dir.Z, dir.X))
 		end
 	end
 	
@@ -3881,21 +3881,21 @@ run(function()
 		Function = function(callback)
 			if callback then
 				Arrows:Clean(entitylib.Events.EntityRemoved:Connect(Removed))
-				for _, v in entitylib.List do
-					if Reference[v] then Removed(v) end
-					Added(v)
+				for _, entity in entitylib.List do
+					if Reference[entity] then Removed(entity) end
+					Added(entity)
 				end
-				Arrows:Clean(entitylib.Events.EntityAdded:Connect(function(ent)
-					if Reference[ent] then Removed(ent) end
-					Added(ent)
+				Arrows:Clean(entitylib.Events.EntityAdded:Connect(function(entity)
+					if Reference[entity] then Removed(entity) end
+					Added(entity)
 				end))
 				Arrows:Clean(vape.Categories.Friends.ColorUpdate.Event:Connect(function()
 					ColorFunc(Color.Hue, Color.Sat, Color.Value)
 				end))
 				Arrows:Clean(runService.RenderStepped:Connect(Loop))
 			else
-				for i in Reference do
-					Removed(i)
+				for entity in Reference do
+					Removed(entity)
 				end
 			end
 		end,
@@ -3957,64 +3957,106 @@ run(function()
 	local Teammates
 	local Walls
 	local Reference = {}
+	local Threads = {}
 	local Folder = Instance.new('Folder')
 	Folder.Parent = vape.holder
+	local Frame
 	
-	local function Added(ent)
-		if not Targets.Players.Enabled and ent.Player then return end
-		if not Targets.NPCs.Enabled and ent.NPC then return end
-		if Teammates.Enabled and (not ent.Targetable) and (not ent.Friend) then return end
+	local function Added(entity)
+		if not Targets.Players.Enabled and entity.Player then return end
+		if not Targets.NPCs.Enabled and entity.NPC then return end
+		if Teammates.Enabled and (not entity.Targetable) and (not entity.Friend) then return end
 		if vape.ThreadFix then
 			setthreadidentity(8)
 		end
 	
 		if Mode.Value == 'Highlight' then
 			local cham = Instance.new('Highlight')
-			cham.Adornee = ent.Character
+			cham.Adornee = entity.Character
 			cham.DepthMode = Enum.HighlightDepthMode[Walls.Enabled and 'AlwaysOnTop' or 'Occluded']
-			cham.FillColor = entitylib.getEntityColor(ent) or Color3.fromHSV(FillColor.Hue, FillColor.Sat, FillColor.Value)
+			cham.FillColor = entitylib.getEntityColor(entity) or Color3.fromHSV(FillColor.Hue, FillColor.Sat, FillColor.Value)
 			cham.OutlineColor = Color3.fromHSV(OutlineColor.Hue, OutlineColor.Sat, OutlineColor.Value)
 			cham.FillTransparency = FillTransparency.Value
 			cham.OutlineTransparency = OutlineTransparency.Value
 			cham.Parent = Folder
-			Reference[ent] = cham
+			Reference[entity] = cham
+		elseif Mode.Value == 'ViewportFrame' then
+			if Threads[entity] then
+				task.cancel(Threads[entity])
+			end
+	
+			Threads[entity] = task.spawn(function()
+				if entity.Player and entity.SpawnTime > os.clock() then
+					task.wait(0.5)
+				end
+	
+				entity.Character.Archivable = true
+				local clone = entity.Character:Clone()
+				for _, scr in clone:QueryDescendants('LocalScript, Tool') do
+					scr:Destroy()
+				end
+				entity.Character.Archivable = false
+				clone.Parent = Frame.WorldModel
+	
+				local animator = clone:FindFirstChildWhichIsA('Animator', true)
+				local oanim = entity.Character:FindFirstChildWhichIsA('Animator', true)
+				if animator and oanim then
+					animator:SynchronizeWith(oanim)
+				end
+	
+				Threads[entity] = nil
+				Reference[entity] = {
+					Character = clone,
+					Root = clone:FindFirstChild('HumanoidRootPart')
+				}
+			end)
 		else
 			local chams = {}
-			for _, v in ent.Character:GetChildren() do
-				if v:IsA('BasePart') and (ent.NPC or v.Name:find('Arm') or v.Name:find('Leg') or v.Name:find('Hand') or v.Name:find('Feet') or v.Name:find('Torso') or v.Name == 'Head') then
-					local box = Instance.new(v.Name == 'Head' and 'SphereHandleAdornment' or 'BoxHandleAdornment')
-					if v.Name == 'Head' then
+			for _, part in entity.Character:GetChildren() do
+				if part:IsA('BasePart') and (entity.NPC or part.Name:find('Arm') or part.Name:find('Leg') or part.Name:find('Hand') or part.Name:find('Feet') or part.Name:find('Torso') or part.Name == 'Head') then
+					local box = Instance.new(part.Name == 'Head' and 'SphereHandleAdornment' or 'BoxHandleAdornment')
+					if part.Name == 'Head' then
 						box.Radius = 0.75
 					else
-						box.Size = v.Size
+						box.Size = part.Size
 					end
+	
 					box.AlwaysOnTop = Walls.Enabled
-					box.Adornee = v
+					box.Adornee = part
 					box.ZIndex = 0
 					box.Transparency = FillTransparency.Value
-					box.Color3 = entitylib.getEntityColor(ent) or Color3.fromHSV(FillColor.Hue, FillColor.Sat, FillColor.Value)
+					box.Color3 = entitylib.getEntityColor(entity) or Color3.fromHSV(FillColor.Hue, FillColor.Sat, FillColor.Value)
 					box.Parent = Folder
 					table.insert(chams, box)
 				end
 			end
-			Reference[ent] = chams
+	
+			Reference[entity] = chams
 		end
 	end
 	
-	local function Removed(ent)
-		if Reference[ent] then
+	local function Removed(entity)
+		if Reference[entity] then
 			if vape.ThreadFix then
 				setthreadidentity(8)
 			end
-			if type(Reference[ent]) == 'table' then
-				for _, v in Reference[ent] do
-					v:Destroy()
-				end
-				table.clear(Reference[ent])
-			else
-				Reference[ent]:Destroy()
+	
+			if Threads[entity] then
+				task.cancel(Threads[entity])
+				Threads[entity] = nil
 			end
-			Reference[ent] = nil
+	
+			if type(Reference[entity]) == 'table' then
+				for _, entry in Reference[entity] do
+					entry:Destroy()
+				end
+	
+				table.clear(Reference[entity])
+			else
+				Reference[entity]:Destroy()
+			end
+	
+			Reference[entity] = nil
 		end
 	end
 	
@@ -4022,6 +4064,23 @@ run(function()
 		Name = 'Chams',
 		Function = function(callback)
 			if callback then
+				if Mode.Value == 'ViewportFrame' then
+					Frame = Instance.new('ViewportFrame')
+					Frame.BackgroundTransparency = 1
+					Frame.CurrentCamera = gameCamera
+					Frame.Size = UDim2.fromScale(1, 1)
+					Frame.Parent = vape.gui
+					Chams:Clean(Frame)
+					local holder = Instance.new('WorldModel')
+					holder.Parent = Frame
+	
+					Chams:Clean(runService.RenderStepped:Connect(function()
+						for entity, entry in Reference do
+							entry.Root.CFrame = entity.RootPart.CFrame
+						end
+					end))
+				end
+	
 				Chams:Clean(entitylib.Events.EntityRemoved:Connect(Removed))
 				Chams:Clean(entitylib.Events.EntityAdded:Connect(function(ent)
 					if Reference[ent] then
@@ -4029,27 +4088,38 @@ run(function()
 					end
 					Added(ent)
 				end))
+	
 				Chams:Clean(vape.Categories.Friends.ColorUpdate.Event:Connect(function()
-					for i, v in Reference do
-						local color = entitylib.getEntityColor(i) or Color3.fromHSV(FillColor.Hue, FillColor.Sat, FillColor.Value)
-						if type(v) == 'table' then
-							for _, v2 in v do v2.Color3 = color end
+					for entity, entry in Reference do
+						local color = entitylib.getEntityColor(entity) or Color3.fromHSV(FillColor.Hue, FillColor.Sat, FillColor.Value)
+						if type(entry) == 'table' then
+							if entry.Root then continue end
+							for _, handle in entry do
+								handle.Color3 = color
+							end
 						else
-							v.FillColor = color
+							entry.FillColor = color
 						end
 					end
 				end))
 	
-				for _, v in entitylib.List do
-					if Reference[v] then
-						Removed(v)
+				for _, entity in entitylib.List do
+					if Reference[entity] then
+						Removed(entity)
 					end
-					Added(v)
+	
+					Added(entity)
 				end
 			else
-				for i in Reference do
-					Removed(i)
+				for entity in Reference do
+					Removed(entity)
 				end
+	
+				for _, thread in Threads do
+					task.cancel(thread)
+				end
+	
+				table.clear(Threads)
 			end
 		end,
 		Tooltip = 'Render players through walls'
@@ -4065,10 +4135,14 @@ run(function()
 		})
 	Mode = Chams:CreateDropdown({
 		Name = 'Mode',
-		List = {'Highlight', 'BoxHandles'},
+		List = {'Highlight', 'BoxHandles', 'ViewportFrame'},
 		Function = function(val)
 			OutlineColor.Object.Visible = val == 'Highlight'
 			OutlineTransparency.Object.Visible = val == 'Highlight'
+			FillTransparency.Object.Visible = val ~= 'ViewportFrame'
+			FillColor.Object.Visible = val ~= 'ViewportFrame'
+			Walls.Object.Visible = val ~= 'ViewportFrame'
+	
 			if Chams.Enabled then
 				Chams:Toggle()
 				Chams:Toggle()
@@ -4078,12 +4152,16 @@ run(function()
 	FillColor = Chams:CreateColorSlider({
 		Name = 'Color',
 		Function = function(hue, sat, val)
-			for i, v in Reference do
-				local color = entitylib.getEntityColor(i) or Color3.fromHSV(hue, sat, val)
-				if type(v) == 'table' then
-					for _, v2 in v do v2.Color3 = color end
+			for entity, entry in Reference do
+				local color = entitylib.getEntityColor(entity) or Color3.fromHSV(hue, sat, val)
+	
+				if type(entry) == 'table' then
+					if entry.Root then continue end
+					for _, handle in entry do
+						handle.Color3 = color
+					end
 				else
-					v.FillColor = color
+					entry.FillColor = color
 				end
 			end
 		end
@@ -4092,9 +4170,9 @@ run(function()
 		Name = 'Outline Color',
 		DefaultSat = 0,
 		Function = function(hue, sat, val)
-			for i, v in Reference do
-				if type(v) ~= 'table' then
-					v.OutlineColor = Color3.fromHSV(hue, sat, val)
+			for _, entry in Reference do
+				if type(entry) ~= 'table' then
+					entry.OutlineColor = Color3.fromHSV(hue, sat, val)
 				end
 			end
 		end,
@@ -4106,11 +4184,14 @@ run(function()
 		Max = 1,
 		Default = 0.5,
 		Function = function(val)
-			for _, v in Reference do
-				if type(v) == 'table' then
-					for _, v2 in v do v2.Transparency = val end
+			for _, entry in Reference do
+				if type(entry) == 'table' then
+					if entry.Root then continue end
+					for _, handle in entry do
+						handle.Transparency = val
+					end
 				else
-					v.FillTransparency = val
+					entry.FillTransparency = val
 				end
 			end
 		end,
@@ -4122,9 +4203,9 @@ run(function()
 		Max = 1,
 		Default = 0.5,
 		Function = function(val)
-			for _, v in Reference do
-				if type(v) ~= 'table' then
-					v.OutlineTransparency = val
+			for _, entry in Reference do
+				if type(entry) ~= 'table' then
+					entry.OutlineTransparency = val
 				end
 			end
 		end,
@@ -4134,13 +4215,14 @@ run(function()
 	Walls = Chams:CreateToggle({
 		Name = 'Render Walls',
 		Function = function(callback)
-			for _, v in Reference do
-				if type(v) == 'table' then
-					for _, v2 in v do
-						v2.AlwaysOnTop = callback
+			for _, entry in Reference do
+				if type(entry) == 'table' then
+					if entry.Root then continue end
+					for _, handle in entry do
+						handle.AlwaysOnTop = callback
 					end
 				else
-					v.DepthMode = Enum.HighlightDepthMode[callback and 'AlwaysOnTop' or 'Occluded']
+					entry.DepthMode = Enum.HighlightDepthMode[callback and 'AlwaysOnTop' or 'Occluded']
 				end
 			end
 		end,
@@ -4182,10 +4264,10 @@ run(function()
 	end
 	
 	local ESPAdded = {
-		Drawing2D = function(ent)
-			if not Targets.Players.Enabled and ent.Player then return end
-			if not Targets.NPCs.Enabled and ent.NPC then return end
-			if Teammates.Enabled and (not ent.Targetable) and (not ent.Friend) then return end
+		Drawing2D = function(entity)
+			if not Targets.Players.Enabled and entity.Player then return end
+			if not Targets.NPCs.Enabled and entity.NPC then return end
+			if Teammates.Enabled and (not entity.Targetable) and (not entity.Friend) then return end
 			if vape.ThreadFix then
 				setthreadidentity(8)
 			end
@@ -4195,7 +4277,7 @@ run(function()
 			EntityESP.Main.ZIndex = 2
 			EntityESP.Main.Filled = false
 			EntityESP.Main.Thickness = 1
-			EntityESP.Main.Color = entitylib.getEntityColor(ent) or Color3.fromHSV(Color.Hue, Color.Sat, Color.Value)
+			EntityESP.Main.Color = entitylib.getEntityColor(entity) or Color3.fromHSV(Color.Hue, Color.Sat, Color.Value)
 	
 			if BoundingBox.Enabled then
 				EntityESP.Border = Drawing.new('Square')
@@ -4216,14 +4298,14 @@ run(function()
 				EntityESP.HealthLine = Drawing.new('Line')
 				EntityESP.HealthLine.Thickness = 1
 				EntityESP.HealthLine.ZIndex = 2
-				EntityESP.HealthLine.Color = Color3.fromHSV(math.clamp(ent.Health / ent.MaxHealth, 0, 1) / 2.5, 0.89, 0.75)
+				EntityESP.HealthLine.Color = Color3.fromHSV(math.clamp(entity.Health / entity.MaxHealth, 0, 1) / 2.5, 0.89, 0.75)
 				EntityESP.HealthBorder = Drawing.new('Line')
 				EntityESP.HealthBorder.Thickness = 3
 				EntityESP.HealthBorder.Transparency = 0.35
 				EntityESP.HealthBorder.ZIndex = 1
 				EntityESP.HealthBorder.Color = Color3.new()
 			end
-			
+	
 			if Name.Enabled then
 				if Background.Enabled then
 					EntityESP.TextBKG = Drawing.new('Square')
@@ -4233,9 +4315,10 @@ run(function()
 					EntityESP.TextBKG.Filled = true
 					EntityESP.TextBKG.Color = Color3.new()
 				end
+	
 				EntityESP.Drop = Drawing.new('Text')
 				EntityESP.Drop.Color = Color3.new()
-				EntityESP.Drop.Text = ent.Player and whitelist:tag(ent.Player, true)..(DisplayName.Enabled and ent.Player.DisplayName or ent.Player.Name) or ent.Character.Name
+				EntityESP.Drop.Text = entity.Player and whitelist:tag(entity.Player, true)..(DisplayName.Enabled and entity.Player.DisplayName or entity.Player.Name) or entity.Character.Name
 				EntityESP.Drop.ZIndex = 1
 				EntityESP.Drop.Center = true
 				EntityESP.Drop.Size = 20
@@ -4246,15 +4329,17 @@ run(function()
 				EntityESP.Text.Center = true
 				EntityESP.Text.Size = 20
 			end
-			Reference[ent] = EntityESP
+	
+			Reference[entity] = EntityESP
 		end,
-		Drawing3D = function(ent)
-			if not Targets.Players.Enabled and ent.Player then return end
-			if not Targets.NPCs.Enabled and ent.NPC then return end
-			if Teammates.Enabled and (not ent.Targetable) and (not ent.Friend) then return end
+		Drawing3D = function(entity)
+			if not Targets.Players.Enabled and entity.Player then return end
+			if not Targets.NPCs.Enabled and entity.NPC then return end
+			if Teammates.Enabled and (not entity.Targetable) and (not entity.Friend) then return end
 			if vape.ThreadFix then
 				setthreadidentity(8)
 			end
+	
 			local EntityESP = {}
 			EntityESP.Line1 = Drawing.new('Line')
 			EntityESP.Line2 = Drawing.new('Line')
@@ -4269,21 +4354,22 @@ run(function()
 			EntityESP.Line11 = Drawing.new('Line')
 			EntityESP.Line12 = Drawing.new('Line')
 	
-			local color = entitylib.getEntityColor(ent) or Color3.fromHSV(Color.Hue, Color.Sat, Color.Value)
+			local color = entitylib.getEntityColor(entity) or Color3.fromHSV(Color.Hue, Color.Sat, Color.Value)
 			for _, v in EntityESP do
 				v.Thickness = 1
 				v.Color = color
 			end
 	
-			Reference[ent] = EntityESP
+			Reference[entity] = EntityESP
 		end,
-		DrawingSkeleton = function(ent)
-			if not Targets.Players.Enabled and ent.Player then return end
-			if not Targets.NPCs.Enabled and ent.NPC then return end
-			if Teammates.Enabled and (not ent.Targetable) and (not ent.Friend) then return end
+		DrawingSkeleton = function(entity)
+			if not Targets.Players.Enabled and entity.Player then return end
+			if not Targets.NPCs.Enabled and entity.NPC then return end
+			if Teammates.Enabled and (not entity.Targetable) and (not entity.Friend) then return end
 			if vape.ThreadFix then
 				setthreadidentity(8)
 			end
+	
 			local EntityESP = {}
 			EntityESP.Head = Drawing.new('Line')
 			EntityESP.HeadFacing = Drawing.new('Line')
@@ -4295,24 +4381,25 @@ run(function()
 			EntityESP.LeftLeg = Drawing.new('Line')
 			EntityESP.RightLeg = Drawing.new('Line')
 	
-			local color = entitylib.getEntityColor(ent) or Color3.fromHSV(Color.Hue, Color.Sat, Color.Value)
+			local color = entitylib.getEntityColor(entity) or Color3.fromHSV(Color.Hue, Color.Sat, Color.Value)
 			for _, v in EntityESP do
 				v.Thickness = 2
 				v.Color = color
 			end
 	
-			Reference[ent] = EntityESP
+			Reference[entity] = EntityESP
 		end
 	}
 	
 	local ESPRemoved = {
-		Drawing2D = function(ent)
-			local EntityESP = Reference[ent]
+		Drawing2D = function(entity)
+			local EntityESP = Reference[entity]
 			if EntityESP then
 				if vape.ThreadFix then
 					setthreadidentity(8)
 				end
-				Reference[ent] = nil
+	
+				Reference[entity] = nil
 				for _, v in EntityESP do
 					pcall(function()
 						v.Visible = false
@@ -4326,19 +4413,19 @@ run(function()
 	ESPRemoved.DrawingSkeleton = ESPRemoved.Drawing2D
 	
 	local ESPUpdated = {
-		Drawing2D = function(ent)
-			local EntityESP = Reference[ent]
+		Drawing2D = function(entity)
+			local EntityESP = Reference[entity]
 			if EntityESP then
 				if vape.ThreadFix then
 					setthreadidentity(8)
 				end
-				
+	
 				if EntityESP.HealthLine then
-					EntityESP.HealthLine.Color = Color3.fromHSV(math.clamp(ent.Health / ent.MaxHealth, 0, 1) / 2.5, 0.89, 0.75)
+					EntityESP.HealthLine.Color = Color3.fromHSV(math.clamp(entity.Health / entity.MaxHealth, 0, 1) / 2.5, 0.89, 0.75)
 				end
 	
 				if EntityESP.Text then
-					EntityESP.Text.Text = ent.Player and whitelist:tag(ent.Player, true)..(DisplayName.Enabled and ent.Player.DisplayName or ent.Player.Name) or ent.Character.Name
+					EntityESP.Text.Text = entity.Player and whitelist:tag(entity.Player, true)..(DisplayName.Enabled and entity.Player.DisplayName or entity.Player.Name) or entity.Character.Name
 					EntityESP.Drop.Text = EntityESP.Text.Text
 				end
 			end
@@ -4348,8 +4435,9 @@ run(function()
 	local ColorFunc = {
 		Drawing2D = function(hue, sat, val)
 			local color = Color3.fromHSV(hue, sat, val)
-			for i, v in Reference do
-				v.Main.Color = entitylib.getEntityColor(i) or color
+			for entity, v in Reference do
+				v.Main.Color = entitylib.getEntityColor(entity) or color
+	
 				if v.Text then
 					v.Text.Color = v.Main.Color
 				end
@@ -4357,8 +4445,9 @@ run(function()
 		end,
 		Drawing3D = function(hue, sat, val)
 			local color = Color3.fromHSV(hue, sat, val)
-			for i, v in Reference do
-				local playercolor = entitylib.getEntityColor(i) or color
+			for entity, v in Reference do
+				local playercolor = entitylib.getEntityColor(entity) or color
+	
 				for _, v2 in v do
 					v2.Color = playercolor
 				end
@@ -4369,9 +4458,9 @@ run(function()
 	
 	local ESPLoop = {
 		Drawing2D = function()
-			for ent, EntityESP in Reference do
+			for entity, EntityESP in Reference do
 				if Distance.Enabled then
-					local distance = entitylib.isAlive and (entitylib.character.RootPart.Position - ent.RootPart.Position).Magnitude or math.huge
+					local distance = entitylib.isAlive and (entitylib.character.RootPart.Position - entity.RootPart.Position).Magnitude or math.huge
 					if distance < DistanceLimit.ValueMin or distance > DistanceLimit.ValueMax then
 						for _, obj in EntityESP do
 							obj.Visible = false
@@ -4380,14 +4469,14 @@ run(function()
 					end
 				end
 	
-				local rootPos, rootVis = gameCamera:WorldToViewportPoint(ent.RootPart.Position)
+				local rootPos, rootVis = gameCamera:WorldToViewportPoint(entity.RootPart.Position)
 				for _, obj in EntityESP do
 					obj.Visible = rootVis
 				end
 				if not rootVis then continue end
 	
-				local topPos = gameCamera:WorldToViewportPoint((CFrame.lookAlong(ent.RootPart.Position, gameCamera.CFrame.LookVector) * CFrame.new(2, ent.HipHeight, 0)).p)
-				local bottomPos = gameCamera:WorldToViewportPoint((CFrame.lookAlong(ent.RootPart.Position, gameCamera.CFrame.LookVector) * CFrame.new(-2, -ent.HipHeight - 1, 0)).p)
+				local topPos = gameCamera:WorldToViewportPoint((CFrame.lookAlong(entity.RootPart.Position, gameCamera.CFrame.LookVector) * CFrame.new(2, entity.HipHeight, 0)).Position)
+				local bottomPos = gameCamera:WorldToViewportPoint((CFrame.lookAlong(entity.RootPart.Position, gameCamera.CFrame.LookVector) * CFrame.new(-2, -entity.HipHeight - 1, 0)).Position)
 				local sizex, sizey = topPos.X - bottomPos.X, topPos.Y - bottomPos.Y
 				local posx, posy = (rootPos.X - sizex / 2),  ((rootPos.Y - sizey / 2))
 				EntityESP.Main.Position = Vector2.new(posx, posy) // 1
@@ -4400,8 +4489,8 @@ run(function()
 				end
 	
 				if EntityESP.HealthLine then
-					local healthposy = sizey * math.clamp(ent.Health / ent.MaxHealth, 0, 1)
-					EntityESP.HealthLine.Visible = ent.Health > 0
+					local healthposy = sizey * math.clamp(entity.Health / entity.MaxHealth, 0, 1)
+					EntityESP.HealthLine.Visible = entity.Health > 0
 					EntityESP.HealthLine.From = Vector2.new(posx - 6, posy + (sizey - (sizey - healthposy))) // 1
 					EntityESP.HealthLine.To = Vector2.new(posx - 6, posy) // 1
 					EntityESP.HealthBorder.From = Vector2.new(posx - 6, posy + 1) // 1
@@ -4419,9 +4508,9 @@ run(function()
 			end
 		end,
 		Drawing3D = function()
-			for ent, EntityESP in Reference do
+			for entity, EntityESP in Reference do
 				if Distance.Enabled then
-					local distance = entitylib.isAlive and (entitylib.character.RootPart.Position - ent.RootPart.Position).Magnitude or math.huge
+					local distance = entitylib.isAlive and (entitylib.character.RootPart.Position - entity.RootPart.Position).Magnitude or math.huge
 					if distance < DistanceLimit.ValueMin or distance > DistanceLimit.ValueMax then
 						for _, obj in EntityESP do
 							obj.Visible = false
@@ -4430,20 +4519,20 @@ run(function()
 					end
 				end
 	
-				local _, rootVis = gameCamera:WorldToViewportPoint(ent.RootPart.Position)
+				local _, rootVis = gameCamera:WorldToViewportPoint(entity.RootPart.Position)
 				for _, obj in EntityESP do
 					obj.Visible = rootVis
 				end
 				if not rootVis then continue end
 	
-				local point1 = ESPWorldToViewport(ent.RootPart.Position + Vector3.new(1.5, ent.HipHeight, 1.5))
-				local point2 = ESPWorldToViewport(ent.RootPart.Position + Vector3.new(1.5, -ent.HipHeight, 1.5))
-				local point3 = ESPWorldToViewport(ent.RootPart.Position + Vector3.new(-1.5, ent.HipHeight, 1.5))
-				local point4 = ESPWorldToViewport(ent.RootPart.Position + Vector3.new(-1.5, -ent.HipHeight, 1.5))
-				local point5 = ESPWorldToViewport(ent.RootPart.Position + Vector3.new(1.5, ent.HipHeight, -1.5))
-				local point6 = ESPWorldToViewport(ent.RootPart.Position + Vector3.new(1.5, -ent.HipHeight, -1.5))
-				local point7 = ESPWorldToViewport(ent.RootPart.Position + Vector3.new(-1.5, ent.HipHeight, -1.5))
-				local point8 = ESPWorldToViewport(ent.RootPart.Position + Vector3.new(-1.5, -ent.HipHeight, -1.5))
+				local point1 = ESPWorldToViewport(entity.RootPart.Position + Vector3.new(1.5, entity.HipHeight, 1.5))
+				local point2 = ESPWorldToViewport(entity.RootPart.Position + Vector3.new(1.5, -entity.HipHeight, 1.5))
+				local point3 = ESPWorldToViewport(entity.RootPart.Position + Vector3.new(-1.5, entity.HipHeight, 1.5))
+				local point4 = ESPWorldToViewport(entity.RootPart.Position + Vector3.new(-1.5, -entity.HipHeight, 1.5))
+				local point5 = ESPWorldToViewport(entity.RootPart.Position + Vector3.new(1.5, entity.HipHeight, -1.5))
+				local point6 = ESPWorldToViewport(entity.RootPart.Position + Vector3.new(1.5, -entity.HipHeight, -1.5))
+				local point7 = ESPWorldToViewport(entity.RootPart.Position + Vector3.new(-1.5, entity.HipHeight, -1.5))
+				local point8 = ESPWorldToViewport(entity.RootPart.Position + Vector3.new(-1.5, -entity.HipHeight, -1.5))
 				EntityESP.Line1.From = point1
 				EntityESP.Line1.To = point2
 				EntityESP.Line2.From = point3
@@ -4471,9 +4560,9 @@ run(function()
 			end
 		end,
 		DrawingSkeleton = function()
-			for ent, EntityESP in Reference do
+			for entity, EntityESP in Reference do
 				if Distance.Enabled then
-					local distance = entitylib.isAlive and (entitylib.character.RootPart.Position - ent.RootPart.Position).Magnitude or math.huge
+					local distance = entitylib.isAlive and (entitylib.character.RootPart.Position - entity.RootPart.Position).Magnitude or math.huge
 					if distance < DistanceLimit.ValueMin or distance > DistanceLimit.ValueMax then
 						for _, obj in EntityESP do
 							obj.Visible = false
@@ -4482,27 +4571,27 @@ run(function()
 					end
 				end
 	
-				local _, rootVis = gameCamera:WorldToViewportPoint(ent.RootPart.Position)
+				local _, rootVis = gameCamera:WorldToViewportPoint(entity.RootPart.Position)
 				for _, obj in EntityESP do
 					obj.Visible = rootVis
 				end
 				if not rootVis then continue end
-				
-				local rigcheck = ent.Humanoid.RigType == Enum.HumanoidRigType.R6
+	
+				local rigcheck = entity.Humanoid.RigType == Enum.HumanoidRigType.R6
 				pcall(function()
 					local offset = rigcheck and CFrame.new(0, -0.8, 0) or CFrame.identity
-					local head = ESPWorldToViewport((ent.Head.CFrame).p)
-					local headfront = ESPWorldToViewport((ent.Head.CFrame * CFrame.new(0, 0, -0.5)).p)
-					local toplefttorso = ESPWorldToViewport((ent.Character[(rigcheck and 'Torso' or 'UpperTorso')].CFrame * CFrame.new(-1.5, 0.8, 0)).p)
-					local toprighttorso = ESPWorldToViewport((ent.Character[(rigcheck and 'Torso' or 'UpperTorso')].CFrame * CFrame.new(1.5, 0.8, 0)).p)
-					local toptorso = ESPWorldToViewport((ent.Character[(rigcheck and 'Torso' or 'UpperTorso')].CFrame * CFrame.new(0, 0.8, 0)).p)
-					local bottomtorso = ESPWorldToViewport((ent.Character[(rigcheck and 'Torso' or 'UpperTorso')].CFrame * CFrame.new(0, -0.8, 0)).p)
-					local bottomlefttorso = ESPWorldToViewport((ent.Character[(rigcheck and 'Torso' or 'UpperTorso')].CFrame * CFrame.new(-0.5, -0.8, 0)).p)
-					local bottomrighttorso = ESPWorldToViewport((ent.Character[(rigcheck and 'Torso' or 'UpperTorso')].CFrame * CFrame.new(0.5, -0.8, 0)).p)
-					local leftarm = ESPWorldToViewport((ent.Character[(rigcheck and 'Left Arm' or 'LeftHand')].CFrame * offset).p)
-					local rightarm = ESPWorldToViewport((ent.Character[(rigcheck and 'Right Arm' or 'RightHand')].CFrame * offset).p)
-					local leftleg = ESPWorldToViewport((ent.Character[(rigcheck and 'Left Leg' or 'LeftFoot')].CFrame * offset).p)
-					local rightleg = ESPWorldToViewport((ent.Character[(rigcheck and 'Right Leg' or 'RightFoot')].CFrame * offset).p)
+					local head = ESPWorldToViewport((entity.Head.CFrame).Position)
+					local headfront = ESPWorldToViewport((entity.Head.CFrame * CFrame.new(0, 0, -0.5)).Position)
+					local toplefttorso = ESPWorldToViewport((entity.Character[(rigcheck and 'Torso' or 'UpperTorso')].CFrame * CFrame.new(-1.5, 0.8, 0)).Position)
+					local toprighttorso = ESPWorldToViewport((entity.Character[(rigcheck and 'Torso' or 'UpperTorso')].CFrame * CFrame.new(1.5, 0.8, 0)).Position)
+					local toptorso = ESPWorldToViewport((entity.Character[(rigcheck and 'Torso' or 'UpperTorso')].CFrame * CFrame.new(0, 0.8, 0)).Position)
+					local bottomtorso = ESPWorldToViewport((entity.Character[(rigcheck and 'Torso' or 'UpperTorso')].CFrame * CFrame.new(0, -0.8, 0)).Position)
+					local bottomlefttorso = ESPWorldToViewport((entity.Character[(rigcheck and 'Torso' or 'UpperTorso')].CFrame * CFrame.new(-0.5, -0.8, 0)).Position)
+					local bottomrighttorso = ESPWorldToViewport((entity.Character[(rigcheck and 'Torso' or 'UpperTorso')].CFrame * CFrame.new(0.5, -0.8, 0)).Position)
+					local leftarm = ESPWorldToViewport((entity.Character[(rigcheck and 'Left Arm' or 'LeftHand')].CFrame * offset).Position)
+					local rightarm = ESPWorldToViewport((entity.Character[(rigcheck and 'Right Arm' or 'RightHand')].CFrame * offset).Position)
+					local leftleg = ESPWorldToViewport((entity.Character[(rigcheck and 'Left Leg' or 'LeftFoot')].CFrame * offset).Position)
+					local rightleg = ESPWorldToViewport((entity.Character[(rigcheck and 'Right Leg' or 'RightFoot')].CFrame * offset).Position)
 					EntityESP.Head.From = toptorso
 					EntityESP.Head.To = head
 					EntityESP.HeadFacing.From = head
@@ -4535,23 +4624,23 @@ run(function()
 					ESP:Clean(entitylib.Events.EntityRemoved:Connect(ESPRemoved[methodused]))
 				end
 				if ESPAdded[methodused] then
-					for _, v in entitylib.List do
-						if Reference[v] then
-							ESPRemoved[methodused](v)
+					for _, entity in entitylib.List do
+						if Reference[entity] then
+							ESPRemoved[methodused](entity)
 						end
-						ESPAdded[methodused](v)
+						ESPAdded[methodused](entity)
 					end
-					ESP:Clean(entitylib.Events.EntityAdded:Connect(function(ent)
-						if Reference[ent] then
-							ESPRemoved[methodused](ent)
+					ESP:Clean(entitylib.Events.EntityAdded:Connect(function(entity)
+						if Reference[entity] then
+							ESPRemoved[methodused](entity)
 						end
-						ESPAdded[methodused](ent)
+						ESPAdded[methodused](entity)
 					end))
 				end
 				if ESPUpdated[methodused] then
 					ESP:Clean(entitylib.Events.EntityUpdated:Connect(ESPUpdated[methodused]))
-					for _, v in entitylib.List do
-						ESPUpdated[methodused](v)
+					for _, entity in entitylib.List do
+						ESPUpdated[methodused](entity)
 					end
 				end
 				if ColorFunc[methodused] then
@@ -4564,8 +4653,8 @@ run(function()
 				end
 			else
 				if ESPRemoved[methodused] then
-					for i in Reference do
-						ESPRemoved[methodused](i)
+					for entity in Reference do
+						ESPRemoved[methodused](entity)
 					end
 				end
 			end
@@ -5054,30 +5143,30 @@ run(function()
 	local methodused
 	
 	local Added = {
-		Normal = function(ent)
-			if not Targets.Players.Enabled and ent.Player then return end
-			if not Targets.NPCs.Enabled and ent.NPC then return end
-			if Teammates.Enabled and (not ent.Targetable) and (not ent.Friend) then return end
+		Normal = function(entity)
+			if not Targets.Players.Enabled and entity.Player then return end
+			if not Targets.NPCs.Enabled and entity.NPC then return end
+			if Teammates.Enabled and (not entity.Targetable) and (not entity.Friend) then return end
 			if vape.ThreadFix then
 				setthreadidentity(8)
 			end
 	
-			Strings[ent] = ent.Player and whitelist:tag(ent.Player, true, true)..(DisplayName.Enabled and ent.Player.DisplayName or ent.Player.Name) or ent.Character.Name
+			Strings[entity] = entity.Player and whitelist:tag(entity.Player, true, true)..(DisplayName.Enabled and entity.Player.DisplayName or entity.Player.Name) or entity.Character.Name
 	
 			if Health.Enabled then
-				local healthColor = Color3.fromHSV(math.clamp(ent.Health / ent.MaxHealth, 0, 1) / 2.5, 0.89, 0.75)
-				Strings[ent] = Strings[ent]..' <font color="rgb('..tostring(math.floor(healthColor.R * 255))..','..tostring(math.floor(healthColor.G * 255))..','..tostring(math.floor(healthColor.B * 255))..')">'..math.round(ent.Health)..'</font>'
+				local healthColor = Color3.fromHSV(math.clamp(entity.Health / entity.MaxHealth, 0, 1) / 2.5, 0.89, 0.75)
+				Strings[entity] = Strings[entity]..' <font color="#'..healthColor:ToHex()..'">'..math.round(entity.Health)..'</font>'
 			end
 	
 			if Distance.Enabled then
-				Strings[ent] = '<font color="rgb(85, 255, 85)">[</font><font color="rgb(255, 255, 255)">%s</font><font color="rgb(85, 255, 85)">]</font> '..Strings[ent]
+				Strings[entity] = '<font color="#55ff55">[</font><font color="#ffffff">%s</font><font color="#55ff55">]</font> '..Strings[entity]
 			end
 	
 			local nametag = Instance.new('TextLabel')
 			nametag.TextSize = 14 * Scale.Value
 			nametag.FontFace = FontOption.Value
-			local size = getfontbounds(removeTags(Strings[ent]), nametag.TextSize, nametag.FontFace, Vector2.new(100000, 100000))
-			nametag.Name = ent.Player and ent.Player.Name or ent.Character.Name
+			local size = getfontbounds(removeTags(Strings[entity]), nametag.TextSize, nametag.FontFace, Vector2.new(100000, 100000))
+			nametag.Name = entity.Player and entity.Player.Name or entity.Character.Name
 			nametag.Size = UDim2.fromOffset(size.X + 8, size.Y + 7)
 			nametag.AnchorPoint = Vector2.new(0.5, 1)
 			nametag.BackgroundColor3 = Color3.new()
@@ -5085,16 +5174,16 @@ run(function()
 			nametag.TextStrokeTransparency = Stroke.Value
 			nametag.BorderSizePixel = 0
 			nametag.Visible = false
-			nametag.Text = Strings[ent]
-			nametag.TextColor3 = entitylib.getEntityColor(ent) or Color3.fromHSV(Color.Hue, Color.Sat, Color.Value)
+			nametag.Text = Strings[entity]
+			nametag.TextColor3 = entitylib.getEntityColor(entity) or Color3.fromHSV(Color.Hue, Color.Sat, Color.Value)
 			nametag.RichText = true
 			nametag.Parent = Folder
-			Reference[ent] = nametag
+			Reference[entity] = nametag
 		end,
-		Drawing = function(ent)
-			if not Targets.Players.Enabled and ent.Player then return end
-			if not Targets.NPCs.Enabled and ent.NPC then return end
-			if Teammates.Enabled and (not ent.Targetable) and (not ent.Friend) then return end
+		Drawing = function(entity)
+			if not Targets.Players.Enabled and entity.Player then return end
+			if not Targets.NPCs.Enabled and entity.NPC then return end
+			if Teammates.Enabled and (not entity.Targetable) and (not entity.Friend) then return end
 	
 			local nametag = {}
 			nametag.BG = Drawing.new('Square')
@@ -5106,45 +5195,45 @@ run(function()
 			nametag.Text.Size = 15 * Scale.Value
 			nametag.Text.Font = 0
 			nametag.Text.ZIndex = 2
-			Strings[ent] = ent.Player and whitelist:tag(ent.Player, true)..(DisplayName.Enabled and ent.Player.DisplayName or ent.Player.Name) or ent.Character.Name
+			Strings[entity] = entity.Player and whitelist:tag(entity.Player, true)..(DisplayName.Enabled and entity.Player.DisplayName or entity.Player.Name) or entity.Character.Name
 	
 			if Health.Enabled then
-				Strings[ent] = Strings[ent]..' '..math.round(ent.Health)
+				Strings[entity] = Strings[entity]..' '..math.round(entity.Health)
 			end
 	
 			if Distance.Enabled then
-				Strings[ent] = '[%s] '..Strings[ent]
+				Strings[entity] = '[%s] '..Strings[entity]
 			end
 	
-			nametag.Text.Text = Strings[ent]
-			nametag.Text.Color = entitylib.getEntityColor(ent) or Color3.fromHSV(Color.Hue, Color.Sat, Color.Value)
+			nametag.Text.Text = Strings[entity]
+			nametag.Text.Color = entitylib.getEntityColor(entity) or Color3.fromHSV(Color.Hue, Color.Sat, Color.Value)
 			nametag.BG.Size = Vector2.new(nametag.Text.TextBounds.X + 8, nametag.Text.TextBounds.Y + 7)
-			Reference[ent] = nametag
+			Reference[entity] = nametag
 		end
 	}
 	
 	local Removed = {
-		Normal = function(ent)
-			local v = Reference[ent]
+		Normal = function(entity)
+			local v = Reference[entity]
 			if v then
 				if vape.ThreadFix then
 					setthreadidentity(8)
 				end
-				Reference[ent] = nil
-				Strings[ent] = nil
-				Sizes[ent] = nil
+				Reference[entity] = nil
+				Strings[entity] = nil
+				Sizes[entity] = nil
 				v:Destroy()
 			end
 		end,
-		Drawing = function(ent)
-			local v = Reference[ent]
+		Drawing = function(entity)
+			local v = Reference[entity]
 			if v then
 				if vape.ThreadFix then
 					setthreadidentity(8)
 				end
-				Reference[ent] = nil
-				Strings[ent] = nil
-				Sizes[ent] = nil
+				Reference[entity] = nil
+				Strings[entity] = nil
+				Sizes[entity] = nil
 				for _, obj in v do
 					pcall(function()
 						obj.Visible = false
@@ -5156,51 +5245,51 @@ run(function()
 	}
 	
 	local Updated = {
-		Normal = function(ent)
-			local nametag = Reference[ent]
+		Normal = function(entity)
+			local nametag = Reference[entity]
 			if nametag then
 				if vape.ThreadFix then
 					setthreadidentity(8)
 				end
-				Sizes[ent] = nil
-				Strings[ent] = ent.Player and whitelist:tag(ent.Player, true, true)..(DisplayName.Enabled and ent.Player.DisplayName or ent.Player.Name) or ent.Character.Name
+				Sizes[entity] = nil
+				Strings[entity] = entity.Player and whitelist:tag(entity.Player, true, true)..(DisplayName.Enabled and entity.Player.DisplayName or entity.Player.Name) or entity.Character.Name
 	
 				if Health.Enabled then
-					local color = Color3.fromHSV(math.clamp(ent.Health / ent.MaxHealth, 0, 1) / 2.5, 0.89, 0.75)
-					Strings[ent] = Strings[ent]..' <font color="rgb('..tostring(math.floor(color.R * 255))..','..tostring(math.floor(color.G * 255))..','..tostring(math.floor(color.B * 255))..')">'..math.round(ent.Health)..'</font>'
+					local color = Color3.fromHSV(math.clamp(entity.Health / entity.MaxHealth, 0, 1) / 2.5, 0.89, 0.75)
+					Strings[entity] = Strings[entity]..' <font color="#'..color:ToHex()..'">'..math.round(entity.Health)..'</font>'
 				end
 	
 				if Distance.Enabled then
-					Strings[ent] = '<font color="rgb(85, 255, 85)">[</font><font color="rgb(255, 255, 255)">%s</font><font color="rgb(85, 255, 85)">]</font> '..Strings[ent]
+					Strings[entity] = '<font color="#55ff55">[</font><font color="#ffffff">%s</font><font color="#55ff55">]</font> '..Strings[entity]
 				end
 	
-				local size = getfontbounds(removeTags(Strings[ent]), nametag.TextSize, nametag.FontFace, Vector2.new(100000, 100000))
+				local size = getfontbounds(removeTags(Strings[entity]), nametag.TextSize, nametag.FontFace, Vector2.new(100000, 100000))
 				nametag.Size = UDim2.fromOffset(size.X + 8, size.Y + 7)
-				nametag.Text = Strings[ent]
+				nametag.Text = Strings[entity]
 			end
 		end,
-		Drawing = function(ent)
-			local nametag = Reference[ent]
+		Drawing = function(entity)
+			local nametag = Reference[entity]
 			if nametag then
 				if vape.ThreadFix then
 					setthreadidentity(8)
 				end
-				Sizes[ent] = nil
-				Strings[ent] = ent.Player and whitelist:tag(ent.Player, true)..(DisplayName.Enabled and ent.Player.DisplayName or ent.Player.Name) or ent.Character.Name
+				Sizes[entity] = nil
+				Strings[entity] = entity.Player and whitelist:tag(entity.Player, true)..(DisplayName.Enabled and entity.Player.DisplayName or entity.Player.Name) or entity.Character.Name
 	
 				if Health.Enabled then
-					Strings[ent] = Strings[ent]..' '..math.round(ent.Health)
+					Strings[entity] = Strings[entity]..' '..math.round(entity.Health)
 				end
 	
 				if Distance.Enabled then
-					Strings[ent] = '[%s] '..Strings[ent]
-					nametag.Text.Text = entitylib.isAlive and string.format(Strings[ent], math.floor((entitylib.character.RootPart.Position - ent.RootPart.Position).Magnitude)) or Strings[ent]
+					Strings[entity] = '[%s] '..Strings[entity]
+					nametag.Text.Text = entitylib.isAlive and string.format(Strings[entity], math.floor((entitylib.character.RootPart.Position - entity.RootPart.Position).Magnitude)) or Strings[entity]
 				else
-					nametag.Text.Text = Strings[ent]
+					nametag.Text.Text = Strings[entity]
 				end
 	
 				nametag.BG.Size = Vector2.new(nametag.Text.TextBounds.X + 8, nametag.Text.TextBounds.Y + 7)
-				nametag.Text.Color = entitylib.getEntityColor(ent) or Color3.fromHSV(Color.Hue, Color.Sat, Color.Value)
+				nametag.Text.Color = entitylib.getEntityColor(entity) or Color3.fromHSV(Color.Hue, Color.Sat, Color.Value)
 			end
 		end
 	}
@@ -5208,51 +5297,52 @@ run(function()
 	local ColorFunc = {
 		Normal = function(hue, sat, val)
 			local color = Color3.fromHSV(hue, sat, val)
-			for i, v in Reference do
-				v.TextColor3 = entitylib.getEntityColor(i) or color
+			for entity, v in Reference do
+				v.TextColor3 = entitylib.getEntityColor(entity) or color
 			end
 		end,
 		Drawing = function(hue, sat, val)
 			local color = Color3.fromHSV(hue, sat, val)
-			for i, v in Reference do
-				v.Text.Color = entitylib.getEntityColor(i) or color
+			for entity, v in Reference do
+				v.Text.Color = entitylib.getEntityColor(entity) or color
 			end
 		end
 	}
 	
 	local Loop = {
 		Normal = function()
-			for ent, nametag in Reference do
+			for entity, nametag in Reference do
 				if DistanceCheck.Enabled then
-					local distance = entitylib.isAlive and (entitylib.character.RootPart.Position - ent.RootPart.Position).Magnitude or math.huge
+					local distance = entitylib.isAlive and (entitylib.character.RootPart.Position - entity.RootPart.Position).Magnitude or math.huge
 					if distance < DistanceLimit.ValueMin or distance > DistanceLimit.ValueMax then
 						nametag.Visible = false
 						continue
 					end
 				end
 	
-				local headPos, headVis = gameCamera:WorldToViewportPoint(ent.RootPart.Position + Vector3.new(0, ent.HipHeight + 1, 0))
+				local headPos, headVis = gameCamera:WorldToViewportPoint(entity.RootPart.Position + Vector3.new(0, entity.HipHeight + 1, 0))
 				nametag.Visible = headVis
 				if not headVis then
 					continue
 				end
 	
 				if Distance.Enabled then
-					local mag = entitylib.isAlive and math.floor((entitylib.character.RootPart.Position - ent.RootPart.Position).Magnitude) or 0
-					if Sizes[ent] ~= mag then
-						nametag.Text = string.format(Strings[ent], mag)
+					local mag = entitylib.isAlive and math.floor((entitylib.character.RootPart.Position - entity.RootPart.Position).Magnitude) or 0
+					if Sizes[entity] ~= mag then
+						nametag.Text = string.format(Strings[entity], mag)
 						local ize = getfontbounds(removeTags(nametag.Text), nametag.TextSize, nametag.FontFace, Vector2.new(100000, 100000))
 						nametag.Size = UDim2.fromOffset(ize.X + 8, ize.Y + 7)
-						Sizes[ent] = mag
+						Sizes[entity] = mag
 					end
 				end
+	
 				nametag.Position = UDim2.fromOffset(headPos.X, headPos.Y)
 			end
 		end,
 		Drawing = function()
-			for ent, nametag in Reference do
+			for entity, nametag in Reference do
 				if DistanceCheck.Enabled then
-					local distance = entitylib.isAlive and (entitylib.character.RootPart.Position - ent.RootPart.Position).Magnitude or math.huge
+					local distance = entitylib.isAlive and (entitylib.character.RootPart.Position - entity.RootPart.Position).Magnitude or math.huge
 					if distance < DistanceLimit.ValueMin or distance > DistanceLimit.ValueMax then
 						nametag.Text.Visible = false
 						nametag.BG.Visible = false
@@ -5260,7 +5350,7 @@ run(function()
 					end
 				end
 	
-				local headPos, headVis = gameCamera:WorldToViewportPoint(ent.RootPart.Position + Vector3.new(0, ent.HipHeight + 1, 0))
+				local headPos, headVis = gameCamera:WorldToViewportPoint(entity.RootPart.Position + Vector3.new(0, entity.HipHeight + 1, 0))
 				nametag.Text.Visible = headVis
 				nametag.BG.Visible = headVis
 				if not headVis then
@@ -5268,13 +5358,14 @@ run(function()
 				end
 	
 				if Distance.Enabled then
-					local mag = entitylib.isAlive and math.floor((entitylib.character.RootPart.Position - ent.RootPart.Position).Magnitude) or 0
-					if Sizes[ent] ~= mag then
-						nametag.Text.Text = string.format(Strings[ent], mag)
+					local mag = entitylib.isAlive and math.floor((entitylib.character.RootPart.Position - entity.RootPart.Position).Magnitude) or 0
+					if Sizes[entity] ~= mag then
+						nametag.Text.Text = string.format(Strings[entity], mag)
 						nametag.BG.Size = Vector2.new(nametag.Text.TextBounds.X + 8, nametag.Text.TextBounds.Y + 7)
-						Sizes[ent] = mag
+						Sizes[entity] = mag
 					end
 				end
+	
 				nametag.BG.Position = Vector2.new(headPos.X - (nametag.BG.Size.X / 2), headPos.Y - nametag.BG.Size.Y)
 				nametag.Text.Position = nametag.BG.Position + Vector2.new(4, 3)
 			end
@@ -5290,23 +5381,23 @@ run(function()
 					NameTags:Clean(entitylib.Events.EntityRemoved:Connect(Removed[methodused]))
 				end
 				if Added[methodused] then
-					for _, v in entitylib.List do
-						if Reference[v] then
-							Removed[methodused](v)
+					for _, entity in entitylib.List do
+						if Reference[entity] then
+							Removed[methodused](entity)
 						end
-						Added[methodused](v)
+						Added[methodused](entity)
 					end
-					NameTags:Clean(entitylib.Events.EntityAdded:Connect(function(ent)
-						if Reference[ent] then
-							Removed[methodused](ent)
+					NameTags:Clean(entitylib.Events.EntityAdded:Connect(function(entity)
+						if Reference[entity] then
+							Removed[methodused](entity)
 						end
-						Added[methodused](ent)
+						Added[methodused](entity)
 					end))
 				end
 				if Updated[methodused] then
 					NameTags:Clean(entitylib.Events.EntityUpdated:Connect(Updated[methodused]))
-					for _, v in entitylib.List do
-						Updated[methodused](v)
+					for _, entity in entitylib.List do
+						Updated[methodused](entity)
 					end
 				end
 				if ColorFunc[methodused] then
@@ -5319,8 +5410,8 @@ run(function()
 				end
 			else
 				if Removed[methodused] then
-					for i in Reference do
-						Removed[methodused](i)
+					for entity in Reference do
+						Removed[methodused](entity)
 					end
 				end
 			end
@@ -5467,12 +5558,12 @@ run(function()
 	local Rots = {}
 	local models = {}
 	
-	local function addMesh(ent)
+	local function addMesh(entity)
 		if vape.ThreadFix then
 			setthreadidentity(8)
 		end
 	
-		local root = ent.RootPart
+		local root = entity.RootPart
 		local part = Instance.new('Part')
 		part.Size = Vector3.new(3, 3, 3)
 		part.CFrame = root.CFrame * CFrame.Angles(math.rad(Rots[1].Value), math.rad(Rots[2].Value), math.rad(Rots[3].Value))
@@ -5492,10 +5583,10 @@ run(function()
 		models[root] = part
 	end
 	
-	local function removeMesh(ent)
-		if models[ent.RootPart] then
-			models[ent.RootPart]:Destroy()
-			models[ent.RootPart] = nil
+	local function removeMesh(entity)
+		if models[entity.RootPart] then
+			models[entity.RootPart]:Destroy()
+			models[entity.RootPart] = nil
 		end
 	end
 	
@@ -5510,6 +5601,7 @@ run(function()
 						task.spawn(addMesh, entitylib.character)
 					end
 				end
+	
 				PlayerModel:Clean(entitylib.Events.EntityAdded:Connect(addMesh))
 				PlayerModel:Clean(entitylib.Events.EntityRemoved:Connect(removeMesh))
 				for _, ent in entitylib.List do
@@ -5589,10 +5681,10 @@ run(function()
 	local Reference = {}
 	local bkg
 	
-	local function Added(ent)
-		if not Targets.Players.Enabled and ent.Player then return end
-		if not Targets.NPCs.Enabled and ent.NPC then return end
-		if (not ent.Targetable) and (not ent.Friend) then return end
+	local function Added(entity)
+		if not Targets.Players.Enabled and entity.Player then return end
+		if not Targets.NPCs.Enabled and entity.NPC then return end
+		if (not entity.Targetable) and (not entity.Friend) then return end
 		if vape.ThreadFix then
 			setthreadidentity(8)
 		end
@@ -5600,7 +5692,7 @@ run(function()
 		local dot = Instance.new('Frame')
 		dot.Size = UDim2.fromOffset(4, 4)
 		dot.AnchorPoint = Vector2.new(0.5, 0.5)
-		dot.BackgroundColor3 = entitylib.getEntityColor(ent) or Color3.fromHSV(PlayerColor.Hue, PlayerColor.Sat, PlayerColor.Value)
+		dot.BackgroundColor3 = entitylib.getEntityColor(entity) or Color3.fromHSV(PlayerColor.Hue, PlayerColor.Sat, PlayerColor.Value)
 		dot.Parent = bkg
 		local corner = Instance.new('UICorner')
 		corner.CornerRadius = UDim.new(DotStyle.Value == 'Circles' and 1 or 0, 0)
@@ -5610,16 +5702,16 @@ run(function()
 		stroke.Thickness = 1
 		stroke.Transparency = 0.8
 		stroke.Parent = dot
-		Reference[ent] = dot
+		Reference[entity] = dot
 	end
 	
-	local function Removed(ent)
-		local v = Reference[ent]
+	local function Removed(entity)
+		local v = Reference[entity]
 		if v then
 			if vape.ThreadFix then
 				setthreadidentity(8)
 			end
-			Reference[ent] = nil
+			Reference[entity] = nil
 			v:Destroy()
 		end
 	end
@@ -5632,34 +5724,34 @@ run(function()
 		Function = function(callback)
 			if callback then
 				Radar:Clean(entitylib.Events.EntityRemoved:Connect(Removed))
-				for _, v in entitylib.List do
-					if Reference[v] then
-						Removed(v)
+				for _, entity in entitylib.List do
+					if Reference[entity] then
+						Removed(entity)
 					end
-					Added(v)
+					Added(entity)
 				end
-				Radar:Clean(entitylib.Events.EntityAdded:Connect(function(ent)
-					if Reference[ent] then
-						Removed(ent)
+				Radar:Clean(entitylib.Events.EntityAdded:Connect(function(entity)
+					if Reference[entity] then
+						Removed(entity)
 					end
-					Added(ent)
+					Added(entity)
 				end))
 				Radar:Clean(vape.Categories.Friends.ColorUpdate.Event:Connect(function()
-					for ent, dot in Reference do
-						dot.BackgroundColor3 = entitylib.getEntityColor(ent) or Color3.fromHSV(PlayerColor.Hue, PlayerColor.Sat, PlayerColor.Value)
+					for entity, dot in Reference do
+						dot.BackgroundColor3 = entitylib.getEntityColor(entity) or Color3.fromHSV(PlayerColor.Hue, PlayerColor.Sat, PlayerColor.Value)
 					end
 				end))
 				Radar:Clean(runService.RenderStepped:Connect(function()
-					for ent, dot in Reference do
+					for entity, dot in Reference do
 						if entitylib.isAlive then
-							local dt = CFrame.lookAlong(entitylib.character.RootPart.Position, gameCamera.CFrame.LookVector * Vector3.new(1, 0, 1)):PointToObjectSpace(ent.RootPart.Position)
+							local dt = CFrame.lookAlong(entitylib.character.RootPart.Position, gameCamera.CFrame.LookVector * Vector3.new(1, 0, 1)):PointToObjectSpace(entity.RootPart.Position)
 							dot.Position = UDim2.fromOffset(Clamp.Enabled and math.clamp(108 + dt.X, 2, 214) or 108 + dt.X, Clamp.Enabled and math.clamp(108 + dt.Z, 8, 214) or 108 + dt.Z)
 						end
 					end
 				end))
 			else
-				for ent in Reference do
-					Removed(ent)
+				for entity in Reference do
+					Removed(entity)
 				end
 			end
 		end
@@ -5763,19 +5855,19 @@ run(function()
 	local Folder = Instance.new('Folder')
 	Folder.Parent = vape.holder
 	
-	local function Add(v)
-		if not table.find(List.ListEnabled, v.Name) then return end
-		if v:IsA('BasePart') or v:IsA('Model') then
-			local size = v:IsA('Model') and v:GetExtentsSize() or v.Size
+	local function Add(obj)
+		if not table.find(List.ListEnabled, obj.Name) then return end
+		if obj:IsA('BasePart') or obj:IsA('Model') then
+			local size = obj:IsA('Model') and obj:GetExtentsSize() or obj.Size
 			local box = Instance.new('BoxHandleAdornment')
 			box.AlwaysOnTop = true
-			box.Adornee = v
+			box.Adornee = obj
 			box.Size = size.Magnitude > 0.4 and size or Vector3.one
 			box.ZIndex = 0
 			box.Transparency = FillTransparency.Value
 			box.Color3 = Color3.fromHSV(Color.Hue, Color.Sat, Color.Value)
 			box.Parent = Folder
-			Reference[v] = box
+			Reference[obj] = box
 		end
 	end
 	
@@ -5784,15 +5876,15 @@ run(function()
 		Function = function(callback)
 			if callback then
 				Search:Clean(workspace.DescendantAdded:Connect(Add))
-				Search:Clean(workspace.DescendantRemoving:Connect(function(v)
-					if Reference[v] then
-						Reference[v]:Destroy()
-						Reference[v] = nil
+				Search:Clean(workspace.DescendantRemoving:Connect(function(obj)
+					if Reference[obj] then
+						Reference[obj]:Destroy()
+						Reference[obj] = nil
 					end
 				end))
 	
-				for _, v in workspace:QueryDescendants('BasePart, Model') do
-					Add(v)
+				for _, obj in workspace:QueryDescendants('BasePart, Model') do
+					Add(obj)
 				end
 			else
 				Folder:ClearAllChildren()
@@ -6688,10 +6780,10 @@ run(function()
 	local Behind
 	local Reference = {}
 	
-	local function Added(ent)
-		if not Targets.Players.Enabled and ent.Player then return end
-		if not Targets.NPCs.Enabled and ent.NPC then return end
-		if Teammates.Enabled and (not ent.Targetable) and (not ent.Friend) then return end
+	local function Added(entity)
+		if not Targets.Players.Enabled and entity.Player then return end
+		if not Targets.NPCs.Enabled and entity.NPC then return end
+		if Teammates.Enabled and (not entity.Targetable) and (not entity.Friend) then return end
 		if vape.ThreadFix then
 			setthreadidentity(8)
 		end
@@ -6699,17 +6791,17 @@ run(function()
 		local EntityTracer = Drawing.new('Line')
 		EntityTracer.Thickness = 1
 		EntityTracer.Transparency = 1 - Transparency.Value
-		EntityTracer.Color = entitylib.getEntityColor(ent) or Color3.fromHSV(Color.Hue, Color.Sat, Color.Value)
-		Reference[ent] = EntityTracer
+		EntityTracer.Color = entitylib.getEntityColor(entity) or Color3.fromHSV(Color.Hue, Color.Sat, Color.Value)
+		Reference[entity] = EntityTracer
 	end
 	
-	local function Removed(ent)
-		local v = Reference[ent]
+	local function Removed(entity)
+		local v = Reference[entity]
 		if v then
 			if vape.ThreadFix then
 				setthreadidentity(8)
 			end
-			Reference[ent] = nil
+			Reference[entity] = nil
 			pcall(function()
 				v.Visible = false
 				v:Remove()
@@ -6720,8 +6812,8 @@ run(function()
 	local function ColorFunc(hue, sat, val)
 		if DistanceColor.Enabled then return end
 		local tracerColor = Color3.fromHSV(hue, sat, val)
-		for ent, EntityTracer in Reference do
-			EntityTracer.Color = entitylib.getEntityColor(ent) or tracerColor
+		for entity, EntityTracer in Reference do
+			EntityTracer.Color = entitylib.getEntityColor(entity) or tracerColor
 		end
 	end
 	
@@ -6729,8 +6821,8 @@ run(function()
 		local screenSize = vape.gui.AbsoluteSize
 		local startVector = StartPosition.Value == 'Mouse' and inputService:GetMouseLocation() or Vector2.new(screenSize.X / 2, (StartPosition.Value == 'Middle' and screenSize.Y / 2 or screenSize.Y))
 	
-		for ent, EntityTracer in Reference do
-			local distance = entitylib.isAlive and (entitylib.character.RootPart.Position - ent.RootPart.Position).Magnitude
+		for entity, EntityTracer in Reference do
+			local distance = entitylib.isAlive and (entitylib.character.RootPart.Position - entity.RootPart.Position).Magnitude
 			if Distance.Enabled and distance then
 				if distance < DistanceLimit.ValueMin or distance > DistanceLimit.ValueMax then
 					EntityTracer.Visible = false
@@ -6738,7 +6830,7 @@ run(function()
 				end
 			end
 	
-			local pos = ent[EndPosition.Value == 'Torso' and 'RootPart' or 'Head'].Position
+			local pos = entity[EndPosition.Value == 'Torso' and 'RootPart' or 'Head'].Position
 			local rootPos, rootVis = gameCamera:WorldToViewportPoint(pos)
 			if not rootVis and Behind.Enabled then
 				local tempPos = gameCamera.CFrame:PointToObjectSpace(pos)
@@ -6751,6 +6843,7 @@ run(function()
 			EntityTracer.Visible = rootVis
 			EntityTracer.From = startVector
 			EntityTracer.To = endVector
+	
 			if DistanceColor.Enabled and distance then
 				EntityTracer.Color = Color3.fromHSV(math.min((distance / 128) / 2.8, 0.4), 0.89, 0.75)
 			end
@@ -6762,25 +6855,25 @@ run(function()
 		Function = function(callback)
 			if callback then
 				Tracers:Clean(entitylib.Events.EntityRemoved:Connect(Removed))
-				for _, v in entitylib.List do
-					if Reference[v] then
-						Removed(v)
+				for _, entity in entitylib.List do
+					if Reference[entity] then
+						Removed(entity)
 					end
-					Added(v)
+					Added(entity)
 				end
-				Tracers:Clean(entitylib.Events.EntityAdded:Connect(function(ent)
-					if Reference[ent] then
-						Removed(ent)
+				Tracers:Clean(entitylib.Events.EntityAdded:Connect(function(entity)
+					if Reference[entity] then
+						Removed(entity)
 					end
-					Added(ent)
+					Added(entity)
 				end))
 				Tracers:Clean(vape.Categories.Friends.ColorUpdate.Event:Connect(function()
 					ColorFunc(Color.Hue, Color.Sat, Color.Value)
 				end))
 				Tracers:Clean(runService.RenderStepped:Connect(Loop))
 			else
-				for i in Reference do
-					Removed(i)
+				for entity in Reference do
+					Removed(entity)
 				end
 			end
 		end,
@@ -7117,8 +7210,8 @@ run(function()
 			end
 	
 			if callback then
-				AntiRagdoll:Clean(entitylib.Events.LocalAdded:Connect(function(char)
-					char.Humanoid:SetStateEnabled(Enum.HumanoidStateType.FallingDown, false)
+				AntiRagdoll:Clean(entitylib.Events.LocalAdded:Connect(function(entity)
+					entity.Humanoid:SetStateEnabled(Enum.HumanoidStateType.FallingDown, false)
 				end))
 			end
 		end,
@@ -7135,8 +7228,8 @@ run(function()
 		Function = function(callback)
 			if callback then
 				local rejoinCheck
-				AutoRejoin:Clean(guiService.ErrorMessageChanged:Connect(function(str)
-					if (not rejoinCheck or guiService:GetErrorCode() ~= Enum.ConnectionError.DisconnectLuaKick) and guiService:GetErrorCode() ~= Enum.ConnectionError.DisconnectConnectionLost and not str:lower():find('ban') then
+				AutoRejoin:Clean(guiService.ErrorMessageChanged:Connect(function(kickStr)
+					if (not rejoinCheck or guiService:GetErrorCode() ~= Enum.ConnectionError.DisconnectLuaKick) and guiService:GetErrorCode() ~= Enum.ConnectionError.DisconnectConnectionLost and not kickStr:lower():find('ban') then
 						rejoinCheck = true
 						serverHop(nil, Sort.Value)
 					end
@@ -7389,6 +7482,43 @@ run(function()
 		Name = 'Jump State',
 		Visible = false,
 		Darker = true
+	})
+end)
+
+run(function()
+	local LogSpammer
+	local Message
+	local rand = Random.new()
+	
+	LogSpammer = vape.Categories.Utility:CreateModule({
+		Name = 'LogSpammer',
+		Function = function(callback)
+			if callback then
+				repeat
+					if entitylib.isAlive then
+						local animator = entitylib.character.Humanoid:FindFirstChildWhichIsA('Animator')
+	
+						if animator then
+							if replicatesignal then
+								replicatesignal(animator.OnCombinedUpdate, ('http=507770677'..utf8.char(rand:NextInteger(1, 65535))..Message.Value):sub(1, 256), true, 0, 0.0001, 0, 0, Enum.AnimationPriority.Core, true, 255)
+							else
+								local anim = Instance.new('Animation')
+								anim.AnimationId = ('http=507770677'..utf8.char(rand:NextInteger(1, 65535))..Message.Value):sub(1, 256)
+								local track = animator:LoadAnimation(anim)
+								track:Play(0, 0.0001, 0)
+							end
+						end
+					end
+	
+					task.wait()
+				until not LogSpammer.Enabled
+			end
+		end,
+		Tooltip = 'Use animations to spam the console of people ingame'
+	})
+	Message = LogSpammer:CreateTextBox({
+		Name = 'Message',
+		Placeholder = 'text (242 character limit)'
 	})
 end)
 
@@ -7918,20 +8048,20 @@ run(function()
 	end
 	
 	local function playerAdded(plr)
-		MurderMystery:Clean(plr.DescendantAdded:Connect(function(v)
-			itemAdded(v, plr)
+		MurderMystery:Clean(plr.DescendantAdded:Connect(function(tool)
+			itemAdded(tool, plr)
 		end))
 	
 		local pack = plr:FindFirstChildWhichIsA('Backpack')
 		if pack then
-			for _, v in pack:GetChildren() do
-				itemAdded(v, plr)
+			for _, tool in pack:GetChildren() do
+				itemAdded(tool, plr)
 			end
 		end
 	
 		if plr.Character then
-			for _, v in plr.Character:GetChildren() do
-				itemAdded(v, plr)
+			for _, tool in plr.Character:GetChildren() do
+				itemAdded(tool, plr)
 			end
 		end
 	end
@@ -7942,13 +8072,13 @@ run(function()
 			if callback then
 				oldtargetable, oldgetcolor = entitylib.targetCheck, entitylib.getEntityColor
 	
-				entitylib.getEntityColor = function(ent)
-					ent = ent.Player
-					if not (ent and vape.Settings.Modules.Options['Use team color'].Enabled) then return end
-					if isFriend(ent, true) then
+				entitylib.getEntityColor = function(entity)
+					entity = entity.Player
+					if not (entity and vape.Settings.Modules.Options['Use team color'].Enabled) then return end
+					if isFriend(entity, true) then
 						return Color3.fromHSV(vape.Categories.Friends.Options['Friends color'].Hue, vape.Categories.Friends.Options['Friends color'].Sat, vape.Categories.Friends.Options['Friends color'].Value)
 					end
-					return murderer == ent and Color3.new(1, 0.3, 0.3) or sheriff == ent and Color3.new(0, 0.5, 1) or nil
+					return murderer == entity and Color3.new(1, 0.3, 0.3) or sheriff == entity and Color3.new(0, 0.5, 1) or nil
 				end
 	
 				entitylib.targetCheck = function(entity)
