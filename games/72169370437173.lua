@@ -5,6 +5,13 @@ local cloneref = cloneref or function(obj)
 	return obj
 end
 
+local vapeEvents = setmetatable({}, {
+	__index = function(self, index)
+		self[index] = Instance.new('BindableEvent')
+		return self[index]
+	end
+})
+
 local playersService = cloneref(game:GetService('Players'))
 local inputService = cloneref(game:GetService('UserInputService'))
 local replicatedStorage = cloneref(game:GetService('ReplicatedStorage'))
@@ -52,46 +59,15 @@ run(function()
 	end
 
 	entitylib.addPlayer = function(plr)
-		if plr.Character then
-			entitylib.refreshEntity(plr.Character, plr)
-		end
 
-		entitylib.PlayerConnections[plr] = {
-			plr.CharacterAdded:Connect(function(char)
-				entitylib.refreshEntity(char, plr, os.clock() + 0.4)
-			end),
-			plr.CharacterRemoving:Connect(function(char)
-				entitylib.removeEntity(char, plr == lplr)
-			end),
-			plr:GetAttributeChangedSignal('Team'):Connect(function()
-				if plr == lplr then
-					local cloned = table.clone(entitylib.List)
-					for _, entity in cloned do
-						if entity.Targetable ~= entitylib.targetCheck(entity) then
-							entitylib.refreshEntity(entity.Character, entity.Player)
-						end
-					end
-
-					table.clear(cloned)
-				else
-					local entity = entitylib.getEntity(plr)
-					if entity then
-						entitylib.refreshEntity(entity.Character, plr)
-					end
-				end
-			end)
-		}
 	end
 
 	local oldstart = entitylib.start
 	local function customEntity(entity)
-		if playersService:GetPlayerFromCharacter(entity) then
-			return
-		end
-
-		entitylib.addEntity(entity, nil, function(self)
+		local plr = playersService:GetPlayerFromCharacter(entity)
+		entitylib.addEntity(entity, plr, not plr and function(self)
 			return lplr:GetAttribute('Team') ~= self.Character:GetAttribute('Team')
-		end)
+		end or nil)
 	end
 
 	entitylib.start = function()
@@ -114,13 +90,48 @@ run(function()
 	tribes = {
 		Combat = require(replicatedStorage.Shared.Combat),
 		CombatController = require(lplr.PlayerScripts.Combat.Controller),
+		Economy = require(lplr.PlayerScripts.UI.Economy),
 		Weapons = require(replicatedStorage.Shared.Weapons),
 		Util = require(lplr.PlayerScripts.Combat.Util)
 	}
 
 	tribes.State = debug.getupvalue(tribes.CombatController.State, 2)
 	tribes.SetSpeed = debug.getupvalue(debug.getupvalue(tribes.CombatController.Equip, 11), 15)
+
+	local kills = sessioninfo:AddItem('Kills')
+	local deaths = sessioninfo:AddItem('Deaths')
+	local games = sessioninfo:AddItem('Games')
+	local wins = sessioninfo:AddItem('Wins')
+
+	if not workspace:FindFirstChild('Lobby') then
+		task.delay(1, function()
+			games:Increment()
+		end)
+	end
+
+	vape:Clean(replicatedStorage.Remotes.HitConfirm.OnClientEvent:Connect(function(data)
+		if data and data.killed then
+			kills:Increment()
+		end
+	end))
+
+	vape:Clean(replicatedStorage.Remotes.MatchEvent.OnClientEvent:Connect(function(event, data)
+		if event == 'MatchEnd' then
+			local didWin = data and data.winnerTeam == lplr:GetAttribute('Team')
+			if didWin then
+				wins:Increment()
+			end
+
+			vapeEvents.MatchEnded:Fire(didWin)
+		elseif event == 'Elimination' and data and data.victimId == 'p'..lplr.UserId then
+			deaths:Increment()
+		end
+	end))
 end)
+
+for _, v in {'Reach', 'TriggerBot', 'Jesus', 'AutoRejoin', 'Disabler', 'MurderMystery', 'Parkour', 'Wallhop'} do
+	vape:Remove(v)
+end
 
 run(function()
 	local SilentAim
@@ -291,6 +302,31 @@ run(function()
 end)
 
 run(function()
+	local Velocity
+	
+	local function LocalAdded(char)
+		Velocity:Clean(char.RootPart.AttributeChanged:Connect(function(key)
+			if key:find('Kb') and char.RootPart:GetAttribute(key) then
+				char.RootPart:SetAttribute(key, nil)
+			end
+		end))
+	end
+	
+	Velocity = vape.Categories.Combat:CreateModule({
+		Name = 'Velocity',
+		Function = function(callback)
+			if callback then
+				Velocity:Clean(entitylib.Events.LocalAdded:Connect(LocalAdded))
+				if entitylib.isAlive then
+					LocalAdded(entitylib.character)
+				end
+			end
+		end,
+		Tooltip = 'Prevent the player from taking knockback'
+	})
+end)
+
+run(function()
 	local Killaura
 	local Targets
 	local CPS
@@ -306,7 +342,27 @@ run(function()
 	local ParticleColor1
 	local ParticleColor2
 	local ParticleSize
-	local Particles, Boxes, AttackDelay, AnimDelay = {}, {}, os.clock(), os.clock()
+	local Particles, Boxes, AttackDelay, AnimDelay, BlockDelay = {}, {}, os.clock(), os.clock(), os.clock()
+	
+	local function block(didAttack, tool)
+		if not didAttack and BlockDelay > os.clock() then
+			return
+		end
+	
+		BlockDelay = os.clock() + 0.05
+		local handler = tribes.State.handler
+		if handler.tuning.block then
+			if handler.blocking then
+				handler.ctx.send('Block', {tool = tool, on = true})
+			else
+				handler:SetBlock(true)
+			end
+	
+			if vape.ThreadFix then
+				setthreadidentity(8)
+			end
+		end
+	end
 	
 	local function getAttackData()
 		if Mouse.Enabled then
@@ -327,6 +383,7 @@ run(function()
 					local attacked = {}
 	
 					if tool then
+						local didAttack = false
 						local entities = entitylib.AllPosition({
 							Range = AttackRange.Value,
 							Wallcheck = Targets.Walls.Enabled or nil,
@@ -386,23 +443,22 @@ run(function()
 										})
 									end
 	
+									didAttack = true
 									handler.ctx.send('Swing', {
 										dir = CFrame.lookAt(localPos, attacked[1].Entity.RootPart.Position).LookVector,
 										tool = tool,
 										hits = targets
 									})
 	
-									if handler.blocking then
-										handler.ctx.send('Block', {tool = tool, on = true})
-									elseif AutoBlock.Enabled then
-										handler:SetBlock(true)
-									end
-	
 									if vape.ThreadFix then
 										setthreadidentity(8)
 									end
 								end
 							end
+						end
+	
+						if AutoBlock.Enabled then
+							block(didAttack, tool)
 						end
 					end
 	
@@ -622,15 +678,121 @@ run(function()
 		Name = 'AutoQueue',
 		Function = function(callback)
 			if callback then
-				AutoQueue:Clean(replicatedStorage.Remotes.MatchEvent.OnClientEvent:Connect(function(event)
-					if event == 'MatchEnd' then
-						task.spawn(function()
-							replicatedStorage.Remotes.QueueAction:InvokeServer('PlayAgain')
-						end)
-					end
+				AutoQueue:Clean(vapeEvents.MatchEnded.Event:Connect(function()
+					task.spawn(function()
+						replicatedStorage.Remotes.QueueAction:InvokeServer('PlayAgain')
+					end)
 				end))
 			end
 		end,
 		Tooltip = 'Automatically requeue after the match ends.'
+	})
+end)
+
+run(function()
+	local AutoToxic
+	local GG
+	local Toggles, Lists, Cloned, Presets = {}, {}, {}, {}
+	
+	local function sendMessage(name, obj, default)
+		local message = default
+		if #Lists[name].ListEnabled > 0 then
+			if #Cloned[name] <= 0 then
+				Cloned[name] = table.clone(Lists[name].ListEnabled)
+			end
+	
+			local entry = Random.new():NextInteger(1, #Cloned[name])
+			message = Cloned[name][entry]
+			table.remove(Cloned[name], entry)
+		end
+	
+		if not message then return end
+	
+		message = message and message:gsub('<obj>', obj or '') or ''
+		if textChatService:CanUserChatAsync(lplr.UserId) then
+			textChatService.ChatInputBarConfiguration.TargetTextChannel:SendAsync(message)
+		else
+			textChatService.ChatInputBarConfiguration.TargetTextChannel:SendPresetAsync(Presets[message] or Presets['So close'])
+		end
+	end
+	
+	AutoToxic = vape.Categories.Utility:CreateModule({
+		Name = 'AutoToxic',
+		Function = function(callback)
+			if callback then
+				AutoToxic:Clean(vapeEvents.MatchEnded.Event:Connect(function(won)
+					if GG.Enabled then
+						if textChatService:CanUserChatAsync(lplr.UserId) then
+							textChatService.ChatInputBarConfiguration.TargetTextChannel:SendAsync('gg')
+						else
+							textChatService.ChatInputBarConfiguration.TargetTextChannel:SendPresetAsync(Presets['Good game'])
+						end
+					end
+	
+					if won then
+						if Toggles.Win.Enabled then
+							sendMessage('Win', nil, 'yall garbage')
+						end
+					end
+				end))
+			end
+		end,
+		Tooltip = 'Says a message after a certain action'
+	})
+	GG = AutoToxic:CreateToggle({
+		Name = 'AutoGG',
+		Default = true
+	})
+	for _, v in {'Win'} do
+		Cloned[v] = {}
+		Toggles[v] = AutoToxic:CreateToggle({
+			Name = v..' ',
+			Function = function(callback)
+				if Lists[v] then
+					Lists[v].Object.Visible = callback
+				end
+			end
+		})
+		Lists[v] = AutoToxic:CreateTextList({
+			Name = v,
+			Darker = true,
+			Visible = false,
+			Function = function()
+				table.clear(Cloned[v])
+			end
+		})
+	end
+	
+	pcall(function()
+		for _, group in textChatService:GetPresetsAsync().categoryGroups do
+			for _, category in group.categories do
+				for _, message in category.messages do
+					Presets[message.value] = message.presetId
+				end
+			end
+		end
+	end)
+end)
+
+run(function()
+	local AutoUpgrade
+	
+	AutoUpgrade = vape.Categories.Inventory:CreateModule({
+		Name = 'AutoUpgrade',
+		Function = function(callback)
+			if callback then
+				repeat
+					if lplr.Character and (not lplr.Character:GetAttribute('MatchId') or lplr.Character:GetAttribute('MatchId') == '') then
+						local item = tribes.Economy.ReadyList()[1]
+						if item then
+							tribes.Economy.Upgrade(item)
+						end
+					end
+	
+					task.wait(0.05)
+				until not AutoUpgrade.Enabled
+			end
+		end,
+		Tooltip = 'Automatically upgrade all collectable gear.'
 	})
 end)
