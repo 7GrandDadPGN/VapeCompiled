@@ -5551,16 +5551,23 @@ end)
 
 run(function()
 	local PlayerModel
+	local Mode
 	local Scale
-	local Local
 	local Mesh
 	local Texture
+	local Hide
 	local Rots = {}
 	local models = {}
 	
 	local function addMesh(entity)
 		if vape.ThreadFix then
 			setthreadidentity(8)
+		end
+	
+		if Hide.Enabled then
+			for _, part in entity.Character:QueryDescendants('BasePart') do
+				part.Transparency = 1
+			end
 		end
 	
 		local root = entity.RootPart
@@ -5594,7 +5601,7 @@ run(function()
 		Name = 'PlayerModel',
 		Function = function(callback)
 			if callback then
-				if Local.Enabled then
+				if Mode.Value ~= 'Others' then
 					PlayerModel:Clean(entitylib.Events.LocalAdded:Connect(addMesh))
 					PlayerModel:Clean(entitylib.Events.LocalRemoved:Connect(removeMesh))
 					if entitylib.isAlive then
@@ -5602,10 +5609,12 @@ run(function()
 					end
 				end
 	
-				PlayerModel:Clean(entitylib.Events.EntityAdded:Connect(addMesh))
-				PlayerModel:Clean(entitylib.Events.EntityRemoved:Connect(removeMesh))
-				for _, ent in entitylib.List do
-					task.spawn(addMesh, ent)
+				if Mode.Value ~= 'Local' then
+					PlayerModel:Clean(entitylib.Events.EntityAdded:Connect(addMesh))
+					PlayerModel:Clean(entitylib.Events.EntityRemoved:Connect(removeMesh))
+					for _, ent in entitylib.List do
+						task.spawn(addMesh, ent)
+					end
 				end
 			else
 				for _, part in models do
@@ -5615,6 +5624,16 @@ run(function()
 			end
 		end,
 		Tooltip = 'Change the player models to a Mesh'
+	})
+	Mode = PlayerModel:CreateDropdown({
+		Name = 'Mode',
+		List = {'Others', 'All', 'Local'},
+		Function = function()
+			if PlayerModel.Enabled then
+				PlayerModel:Toggle()
+				PlayerModel:Toggle()
+			end
+		end
 	})
 	Scale = PlayerModel:CreateSlider({
 		Name = 'Scale',
@@ -5642,8 +5661,8 @@ run(function()
 			end
 		}))
 	end
-	Local = PlayerModel:CreateToggle({
-		Name = 'Local',
+	Hide = PlayerModel:CreateToggle({
+		Name = 'Hide entity',
 		Function = function()
 			if PlayerModel.Enabled then
 				PlayerModel:Toggle()
