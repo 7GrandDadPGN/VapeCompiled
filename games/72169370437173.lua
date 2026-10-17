@@ -88,6 +88,7 @@ entitylib.start()
 
 run(function()
 	tribes = {
+		Bow = require(lplr.PlayerScripts.Combat.Handlers.Bow),
 		Combat = require(replicatedStorage.Shared.Combat),
 		CombatController = require(lplr.PlayerScripts.Combat.Controller),
 		Economy = require(lplr.PlayerScripts.UI.Economy),
@@ -145,16 +146,16 @@ run(function()
 	local old
 	
 	local function Hook(...)
-		local tuning
+		local handler
 	
 		for _, obj in debug.getstack(3) do
 			if type(obj) == 'table' and rawget(obj, 'tuning') then
-				tuning = obj
+				handler = obj
 				break
 			end
 		end
 	
-		if tuning then
+		if handler then
 			local entity = entitylib.EntityMouse({
 				Range = Range.Value,
 				Part = 'RootPart',
@@ -165,16 +166,22 @@ run(function()
 			if entity then
 				local targetPart = entity.RootPart
 				local origin = ... or gameCamera.CFrame.Position
-				local projSpeed = tuning.tuning.speed or (tuning.tuning.speedMax or 200)
+				local projSpeed = handler.tuning.speed or (handler.tuning.speedMax or 200)
 	
-				if tuning.drawSound then
-					projSpeed = select(2, tribes.Combat.DrawnShot(tuning.tuning, debug.getstack(3, 4)))
+				if handler.drawStart then
+					projSpeed = select(2, tribes.Combat.DrawnShot(handler.tuning, debug.getstack(3, 4)))
 				end
 	
-				local calc = prediction.SolveTrajectory(origin, projSpeed, math.abs(tuning.tuning.gravity or 60), targetPart.Position, entity.RootPart.AssemblyLinearVelocity)
+				local calc = prediction.SolveTrajectory(origin, projSpeed, math.abs(handler.tuning.gravity or (handler.spreadNow and 0 or 60)), targetPart.Position, entity.RootPart.AssemblyLinearVelocity)
 				if calc then
+					local lookDir = CFrame.lookAt(origin, calc).LookVector
 					targetinfo.Targets[entity] = os.clock() + 1
-					return CFrame.lookAt(origin, calc).LookVector
+	
+					if handler.lastThrow then
+						return (lookDir - Vector3.new(0, ((handler.kind == 'Bomb') and 0.16) or (((handler.kind == 'Sling') and 0.05) or (((handler.kind ~= 'Javelin') and 0.01) or 0.04)), 0)).Unit
+					end
+	
+					return lookDir
 				end
 			end
 		end
@@ -342,27 +349,8 @@ run(function()
 	local ParticleColor1
 	local ParticleColor2
 	local ParticleSize
-	local Particles, Boxes, AttackDelay, AnimDelay, BlockDelay = {}, {}, os.clock(), os.clock(), os.clock()
+	local Particles, Boxes, AttackDelay = {}, {}, os.clock()
 	
-	local function block(didAttack, tool)
-		if not didAttack and BlockDelay > os.clock() then
-			return
-		end
-	
-		BlockDelay = os.clock() + 0.05
-		local handler = tribes.State.handler
-		if handler.tuning.block then
-			if handler.blocking then
-				handler.ctx.send('Block', {tool = tool, on = true})
-			else
-				handler:SetBlock(true)
-			end
-	
-			if vape.ThreadFix then
-				setthreadidentity(8)
-			end
-		end
-	end
 	
 	local function getAttackData()
 		if Mouse.Enabled then
@@ -383,7 +371,7 @@ run(function()
 					local attacked = {}
 	
 					if tool then
-						local didAttack = false
+						local handler = tribes.State.handler
 						local entities = entitylib.AllPosition({
 							Range = AttackRange.Value,
 							Wallcheck = Targets.Walls.Enabled or nil,
@@ -420,45 +408,55 @@ run(function()
 								end
 	
 								if AttackDelay < os.clock() and (AutoBlock.Enabled or not tribes.State.handler.blocking) then
-									AttackDelay = os.clock() + 0.05
-	
 									local targets = {}
-									local handler = tribes.State.handler
 									handler.lastSwing = os.clock()
+	
+									AttackDelay = os.clock() + (handler.tuning.cooldown or 0.5)
 									for _, data in attacked do
 										table.insert(targets, data.Entity.Character)
 									end
 	
-									if AnimDelay < os.clock() then
-										AnimDelay = os.clock() + (handler.tuning.cooldown or 0.5)
-										local comboTable = handler.tuning.combo or {1}
-										local animTable = handler.preset.swings or {}
-	
-										handler.combo = (handler.combo % #comboTable) + 1
-										tribes.Util.PlayAnim(handler.ctx.animator, animTable[((handler.combo - 1) % math.max(1, #animTable)) + 1], (handler.preset.swingSpeed or 1), 0.05)
-										handler.ctx.emit('Swing', {
-											step = handler.combo,
-											finisher = (#comboTable > 2) and (handler.tuning.combo == #comboTable),
-											hitDelay = handler.preset.hitDelay or 0.1
-										})
+									if AutoBlock.Enabled and handler.tuning.block then
+										tribes.State.handler:SetBlock(false)
 									end
 	
-									didAttack = true
+									local oneHanded = handler:OneHanded()
+									local comboTable = oneHanded and (handler.tuning.oneHanded.combo or {1}) or (handler.tuning.combo or {1})
+									local animTable = oneHanded and handler.preset.oneSwings or handler.preset.swings or {}
+									handler.combo = (handler.combo % #comboTable) + 1
+									local finisher = (#comboTable > 2) and (handler.combo == #comboTable)
+									tribes.Util.PlayAnim(handler.ctx.animator, animTable[((handler.combo - 1) % math.max(1, #animTable)) + 1], (handler.preset.swingSpeed or 1) * (finisher and 0.95 or 1), 0.05)
+	
+									handler.ctx.emit('Swing', {
+										step = handler.combo,
+										finisher = finisher,
+										hitDelay = handler.preset.hitDelay or 0.1,
+										oneHanded = oneHanded
+									})
+	
 									handler.ctx.send('Swing', {
 										dir = CFrame.lookAt(localPos, attacked[1].Entity.RootPart.Position).LookVector,
 										tool = tool,
 										hits = targets
 									})
 	
+									if AutoBlock.Enabled and handler.tuning.block then
+										tribes.State.handler:SetBlock(true)
+									end
+	
 									if vape.ThreadFix then
 										setthreadidentity(8)
 									end
 								end
 							end
-						end
+						elseif AutoBlock.Enabled and handler.tuning.block then
+							if tribes.Util.CanAct() then
+								tribes.State.handler:SetBlock(true)
+							end
 	
-						if AutoBlock.Enabled then
-							block(didAttack, tool)
+							if vape.ThreadFix then
+								setthreadidentity(8)
+							end
 						end
 					end
 	
@@ -782,7 +780,7 @@ run(function()
 		Function = function(callback)
 			if callback then
 				repeat
-					if lplr.Character and (not lplr.Character:GetAttribute('MatchId') or lplr.Character:GetAttribute('MatchId') == '') then
+					if (not lplr:GetAttribute('MatchId') or lplr:GetAttribute('MatchId') == '') then
 						local item = tribes.Economy.ReadyList()[1]
 						if item then
 							tribes.Economy.Upgrade(item)
