@@ -317,11 +317,11 @@ run(function()
 					local lookDir = CFrame.lookAt(origin, calc).LookVector
 					targetinfo.Targets[entity] = os.clock() + 1
 	
-					if handler.lastThrow then
+					if handler.maxCharges then
 						return (lookDir - Vector3.new(0, ((handler.kind == 'Bomb') and 0.16) or (((handler.kind == 'Sling') and 0.05) or (((handler.kind ~= 'Javelin') and 0.01) or 0.04)), 0)).Unit
 					end
 	
-					if handler.lastShot and handler.kind ~= 'Blunderbuss' then
+					if handler.spreadNow and handler.kind ~= 'Blunderbuss' then
 						local spread
 						if handler.kind == 'Crossbow' then
 							spread = 0
@@ -529,7 +529,6 @@ run(function()
 	local ParticleSize
 	local Particles, Boxes, AttackDelay = {}, {}, os.clock()
 	
-	
 	local function getAttackData()
 		if Mouse.Enabled then
 			if not inputService:IsMouseButtonPressed(0) then return false end
@@ -538,6 +537,11 @@ run(function()
 		if tribes.State.handler and tribes.State.handler.lastSwing then
 			return tribes.State.tool
 		end
+	end
+	
+	local function sanitizeAngle(cf)
+		local y, x, z = cf:ToEulerAnglesYXZ()
+		return CFrame.Angles(math.clamp(y, -1.3962634015954636, 1.361356816555577), x, z).LookVector
 	end
 	
 	Killaura = vape.Categories.Blatant:CreateModule({
@@ -571,10 +575,12 @@ run(function()
 								end
 	
 								targetinfo.Targets[entity] = os.clock() + 1
-								table.insert(attacked, {
-									Entity = entity,
-									Check = BoxAttackColor
-								})
+								if #attacked < (handler.tuning.maxTargets or 1) then
+									table.insert(attacked, {
+										Entity = entity,
+										Check = BoxAttackColor
+									})
+								end
 							end
 	
 							if #attacked > 0 then
@@ -589,7 +595,7 @@ run(function()
 									local targets = {}
 									handler.lastSwing = os.clock()
 	
-									AttackDelay = os.clock() + (handler.tuning.cooldown or 0.5)
+									AttackDelay = os.clock() + handler:Cooldown()
 									for _, data in attacked do
 										table.insert(targets, data.Entity.Character)
 									end
@@ -613,7 +619,7 @@ run(function()
 									})
 	
 									handler.ctx.send('Swing', {
-										dir = CFrame.lookAt(localPos, attacked[1].Entity.RootPart.Position).LookVector,
+										dir = sanitizeAngle(CFrame.lookAt(localPos + Vector3.new(0, 1.5, 0), attacked[1].Entity.RootPart.Position)),
 										tool = tool,
 										hits = targets
 									})
