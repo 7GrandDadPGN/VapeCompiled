@@ -1651,79 +1651,7 @@ run(function()
 end)
 
 run(function()
-	local GunModifications
-	local Spread
-	local FireRate
-	local Automatic
-	local olddata, old = {}
-	local oldhook
-	
-	local function Modify()
-		local data = debug.getupvalue(oldshoot or pl.Shoot, 10)
-		if data and GunModifications.Enabled then
-			if old ~= data then
-				olddata = table.clone(data)
-				old = data
-			end
-	
-			data.SpreadRadius = Spread.Enabled and 0 or olddata.SpreadRadius
-			data.FireRate = (olddata.FireRate or 0) * (FireRate.Value / 100)
-			data.AutoFire = Automatic.Enabled or olddata.AutoFire
-		end
-	end
-	
-	
-	GunModifications = vape.Categories.Blatant:CreateModule({
-		Name = 'GunModifications',
-		Function = function(callback)
-			if callback then
-				oldequip = hookfunction(pl.Equip, function(...)
-					local res = table.pack(oldequip(...))
-					Modify()
-					return unpack(res, 1, res.n)
-				end)
-	
-				Modify()
-			else
-				if oldequip then
-					if restorefunction then
-						restorefunction(pl.Equip)
-					else
-						oldequip = nil
-					end
-				end
-	
-				if old then
-					for i, v in olddata do
-						old[i] = v
-					end
-					table.clear(olddata)
-					old = nil
-				end
-			end
-		end,
-		Tooltip = 'Apply various modifications to enhance any firearm'
-	})
-	FireRate = GunModifications:CreateSlider({
-		Name = 'FireRate Multiplier',
-		Min = 1,
-		Max = 100,
-		Default = 100,
-		Suffix = '%',
-		Function = Modify
-	})
-	Spread = GunModifications:CreateToggle({
-		Name = 'No Spread',
-		Function = Modify
-	})
-	Automatic = GunModifications:CreateToggle({
-		Name = 'Full Automatic',
-		Function = Modify
-	})
-end)
-
-run(function()
-	local KickExploit
+	local FlingExploit
 	local Mode
 	local List
 	local Movement
@@ -1759,7 +1687,7 @@ run(function()
 					lastFling[entity.Player.Name] = os.clock()
 					tempList[seat] = entity
 					table.clear(cloned)
-					notif('KickExploit', 'Attempted fling: '..entity.Player.Name, 5)
+					notif('FlingExploit', 'Attempted fling: '..entity.Player.Name, 5)
 					return entity
 				end
 			end
@@ -1768,8 +1696,8 @@ run(function()
 		end
 	end
 	
-	KickExploit = vape.Categories.Blatant:CreateModule({
-		Name = 'KickExploit',
+	FlingExploit = vape.Categories.Blatant:CreateModule({
+		Name = 'FlingExploit',
 		Function = function(callback)
 			if callback then
 				local reqTimer = os.clock()
@@ -1786,14 +1714,14 @@ run(function()
 							repeat
 								vape.Modules.ServerHop:Toggle()
 								task.wait(1)
-							until not KickExploit.Enabled
+							until not FlingExploit.Enabled
 	
 							return
 						end
 					end
 				end
 	
-				KickExploit:Clean(runService.Heartbeat:Connect(function(dt)
+				FlingExploit:Clean(runService.Heartbeat:Connect(function(dt)
 					if lplr.Team == teams.Neutral then
 						local gui = lplr.PlayerGui:FindFirstChild('TeamsFrame', true)
 						if gui then
@@ -1896,29 +1824,29 @@ run(function()
 		end,
 		Tooltip = 'aesthetical, just remove collisions on vehicles please, this is the worst.'
 	})
-	Mode = KickExploit:CreateDropdown({
+	Mode = FlingExploit:CreateDropdown({
 		Name = 'Mode',
 		List = {'All', 'Individual'},
 		Function = function(value)
 			List.Object.Visible = value ~= 'All'
 		end
 	})
-	List = KickExploit:CreateTextList({
+	List = FlingExploit:CreateTextList({
 		Name = 'Targets',
 		Placeholder = 'Roblox username',
 		Player = true,
 		Visible = false,
 		Darker = true
 	})
-	Movement = KickExploit:CreateToggle({
+	Movement = FlingExploit:CreateToggle({
 		Name = 'Movement',
 		Default = true
 	})
-	Equipment = KickExploit:CreateToggle({
+	Equipment = FlingExploit:CreateToggle({
 		Name = 'Equipment',
 		Tooltip = 'Grab a gun before kicking to kill seated players.'
 	})
-	AutoRejoin = KickExploit:CreateToggle({
+	AutoRejoin = FlingExploit:CreateToggle({
 		Name = 'AutoRejoin',
 		Function = function(callback)
 			PlayerLimit.Object.Visible = callback
@@ -1927,7 +1855,7 @@ run(function()
 		end,
 		Tooltip = 'Automatically server hop after certain conditions are met.'
 	})
-	PlayerLimit = KickExploit:CreateSlider({
+	PlayerLimit = FlingExploit:CreateSlider({
 		Name = 'Player Limit',
 		Min = 1,
 		Max = 24,
@@ -1938,7 +1866,7 @@ run(function()
 			return value == 1 and 'player' or 'players'
 		end
 	})
-	TimeLimit = KickExploit:CreateSlider({
+	TimeLimit = FlingExploit:CreateSlider({
 		Name = 'Time Limit',
 		Min = 1,
 		Max = 20,
@@ -1949,13 +1877,85 @@ run(function()
 			return value == 1 and 'minute' or 'minutes'
 		end
 	})
-	HopList = KickExploit:CreateTextList({
+	HopList = FlingExploit:CreateTextList({
 		Name = 'Hop List',
 		Placeholder = 'Roblox username',
 		Tooltip = 'Automatically hop if the player is spawned in and in the server, good for multiboxing.',
 		Player = true,
 		Visible = false,
 		Darker = true
+	})
+end)
+
+run(function()
+	local GunModifications
+	local Spread
+	local FireRate
+	local Automatic
+	local olddata, old = {}
+	local oldhook
+	
+	local function Modify()
+		local data = debug.getupvalue(oldshoot or pl.Shoot, 10)
+		if data and GunModifications.Enabled then
+			if old ~= data then
+				olddata = table.clone(data)
+				old = data
+			end
+	
+			data.SpreadRadius = Spread.Enabled and 0 or olddata.SpreadRadius
+			data.FireRate = (olddata.FireRate or 0) * (FireRate.Value / 100)
+			data.AutoFire = Automatic.Enabled or olddata.AutoFire
+		end
+	end
+	
+	
+	GunModifications = vape.Categories.Blatant:CreateModule({
+		Name = 'GunModifications',
+		Function = function(callback)
+			if callback then
+				oldequip = hookfunction(pl.Equip, function(...)
+					local res = table.pack(oldequip(...))
+					Modify()
+					return unpack(res, 1, res.n)
+				end)
+	
+				Modify()
+			else
+				if oldequip then
+					if restorefunction then
+						restorefunction(pl.Equip)
+					else
+						oldequip = nil
+					end
+				end
+	
+				if old then
+					for i, v in olddata do
+						old[i] = v
+					end
+					table.clear(olddata)
+					old = nil
+				end
+			end
+		end,
+		Tooltip = 'Apply various modifications to enhance any firearm'
+	})
+	FireRate = GunModifications:CreateSlider({
+		Name = 'FireRate Multiplier',
+		Min = 1,
+		Max = 100,
+		Default = 100,
+		Suffix = '%',
+		Function = Modify
+	})
+	Spread = GunModifications:CreateToggle({
+		Name = 'No Spread',
+		Function = Modify
+	})
+	Automatic = GunModifications:CreateToggle({
+		Name = 'Full Automatic',
+		Function = Modify
 	})
 end)
 
@@ -3460,7 +3460,7 @@ run(function()
 		Function = function(callback)
 			if callback then
 				TracerHook:Add('DamageIndicator', function(...)
-					local part = debug.getstack(4, 17)
+					local part = debug.getstack(4, 13)
 					if typeof(part) == 'Instance' then
 						for _, v in entitylib.List do
 							if part:IsDescendantOf(v.Character) and entitylib.isVulnerable(v, true) then
@@ -3468,6 +3468,7 @@ run(function()
 									thealth = v.Health
 								end
 	
+								print(tent)
 								tent = v
 								ttimer = os.clock() + 0.5
 								break
@@ -3537,7 +3538,7 @@ run(function()
 			if callback then
 				local played
 				TracerHook:Add('HitSound', function(...)
-					local part = debug.getstack(4, 17)
+					local part = debug.getstack(4, 13)
 					if typeof(part) == 'Instance' then
 						for _, v in entitylib.List do
 							if part:IsDescendantOf(v.Character) and entitylib.isVulnerable(v, true) then

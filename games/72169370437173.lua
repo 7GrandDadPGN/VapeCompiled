@@ -31,6 +31,7 @@ local targetinfo = vape.Libraries.targetinfo
 local sessioninfo = vape.Libraries.sessioninfo
 
 local tribes = {}
+local isMatch = false
 
 local function isFriend(plr, recolor)
 	if vape.Categories.Friends.Options['Use friends'].Enabled then
@@ -45,6 +46,10 @@ end
 
 local function isTarget(plr)
 	return table.find(vape.Categories.Targets.ListEnabled, plr.Name) and true
+end
+
+local function notif(...)
+	return vape:CreateNotification(...)
 end
 
 run(function()
@@ -73,13 +78,13 @@ run(function()
 	entitylib.start = function()
 		oldstart()
 		if entitylib.Running then
-			for _, ent in collectionService:GetTagged('Combatant') do
-				customEntity(ent)
+			for _, entity in collectionService:GetTagged('Combatant') do
+				customEntity(entity)
 			end
 
 			table.insert(entitylib.Connections, collectionService:GetInstanceAddedSignal('Combatant'):Connect(customEntity))
-			table.insert(entitylib.Connections, collectionService:GetInstanceRemovedSignal('Combatant'):Connect(function(ent)
-				entitylib.removeEntity(ent)
+			table.insert(entitylib.Connections, collectionService:GetInstanceRemovedSignal('Combatant'):Connect(function(entity)
+				entitylib.removeEntity(entity)
 			end))
 		end
 	end
@@ -88,10 +93,11 @@ entitylib.start()
 
 run(function()
 	tribes = {
-		Bow = require(lplr.PlayerScripts.Combat.Handlers.Bow),
+		Camera = require(replicatedStorage.Shared.Camera),
 		Combat = require(replicatedStorage.Shared.Combat),
 		CombatController = require(lplr.PlayerScripts.Combat.Controller),
 		Economy = require(lplr.PlayerScripts.UI.Economy),
+		Melee = require(lplr.PlayerScripts.Combat.Handlers.Melee),
 		Weapons = require(replicatedStorage.Shared.Weapons),
 		Util = require(lplr.PlayerScripts.Combat.Util)
 	}
@@ -103,36 +109,170 @@ run(function()
 	local deaths = sessioninfo:AddItem('Deaths')
 	local games = sessioninfo:AddItem('Games')
 	local wins = sessioninfo:AddItem('Wins')
+	local winstreaks = sessioninfo:AddItem('Winstreaks', '', function()
+		local streaks = {}
 
-	if not workspace:FindFirstChild('Lobby') then
+		for _, plr in playersService:GetPlayers() do
+			if plr ~= lplr and (plr:GetAttribute('Streak') or 0) > 0 then
+				table.insert(streaks, plr.Name..': '..plr:GetAttribute('Streak'))
+			end
+		end
+
+		if #streaks > 0 then
+			table.sort(streaks, function(a, b)
+				return (tonumber(a:split(': ')[2]) or 0) > (tonumber(b:split(': ')[2]) or 0)
+			end)
+
+			return '\n'..table.concat(streaks, '\n')
+		end
+
+		return 'None'
+	end, false)
+	isMatch = not workspace:FindFirstChild('Lobby')
+
+	if isMatch then
 		task.delay(1, function()
 			games:Increment()
 		end)
 	end
 
 	vape:Clean(replicatedStorage.Remotes.HitConfirm.OnClientEvent:Connect(function(data)
-		if data and data.killed then
+		if data and data.killed and isMatch then
 			kills:Increment()
 		end
 	end))
 
 	vape:Clean(replicatedStorage.Remotes.MatchEvent.OnClientEvent:Connect(function(event, data)
-		if event == 'MatchEnd' then
-			local didWin = data and data.winnerTeam == lplr:GetAttribute('Team')
-			if didWin then
-				wins:Increment()
-			end
+		if isMatch then
+			if event == 'MatchEnd' then
+				local didWin = data and data.winnerTeam == lplr:GetAttribute('Team')
+				if didWin then
+					wins:Increment()
+				end
 
-			vapeEvents.MatchEnded:Fire(didWin)
-		elseif event == 'Elimination' and data and data.victimId == 'p'..lplr.UserId then
-			deaths:Increment()
+				vapeEvents.MatchEnded:Fire(didWin)
+			elseif event == 'Elimination' and data and data.victimId == 'p'..lplr.UserId then
+				deaths:Increment()
+			end
 		end
 	end))
 end)
 
-for _, v in {'Reach', 'TriggerBot', 'Jesus', 'AutoRejoin', 'Disabler', 'MurderMystery', 'Parkour', 'Wallhop'} do
+for _, v in {'AutoClicker', 'TriggerBot', 'Jesus', 'AutoRejoin', 'Disabler', 'MurderMystery', 'Parkour', 'Wallhop'} do
 	vape:Remove(v)
 end
+
+run(function()
+	local AimAssist
+	local Targets
+	local Sort
+	local AimSpeed
+	local Distance
+	local AngleSlider
+	local StrafeIncrease
+	local Vertical
+	local ClickAim
+	
+	AimAssist = vape.Categories.Combat:CreateModule({
+		Name = 'AimAssist',
+		Function = function(callback)
+			if callback then
+				AimAssist:Clean(runService.Heartbeat:Connect(function(dt)
+					if entitylib.isAlive and tribes.State.handler and tribes.State.handler.lastSwing and ((not ClickAim.Enabled) or (os.clock() - (tribes.State.handler.lastSwing or 0)) < 0.5) then
+						local entity = entitylib.EntityPosition({
+							Range = Distance.Value,
+							Part = 'RootPart',
+							Wallcheck = Targets.Walls.Enabled,
+							Players = Targets.Players.Enabled,
+							NPCs = Targets.NPCs.Enabled
+						})
+	
+						if entity then
+							local delta = (entity.RootPart.Position - entitylib.character.RootPart.Position)
+							local localfacing = entitylib.character.RootPart.CFrame.LookVector * Vector3.new(1, 0, 1)
+							local angle = math.acos(localfacing:Dot((delta * Vector3.new(1, 0, 1)).Unit))
+							if angle >= (math.rad(AngleSlider.Value) / 2) then return end
+							targetinfo.Targets[entity] = os.clock() + 1
+							local lerped = gameCamera.CFrame:Lerp(CFrame.lookAt(gameCamera.CFrame.Position, entity.RootPart.Position), (AimSpeed.Value + (StrafeIncrease.Enabled and (inputService:IsKeyDown(Enum.KeyCode.A) or inputService:IsKeyDown(Enum.KeyCode.D)) and 10 or 0)) * dt).LookVector
+							tribes.Camera.SetLook(math.atan2(-lerped.X, -lerped.Z), Vertical.Enabled and math.asin(lerped.Y) or nil)
+						end
+					end
+				end))
+			end
+		end,
+		Tooltip = 'Smoothly aims to closest valid target with sword'
+	})
+	Targets = AimAssist:CreateTargets({
+		Players = true,
+		NPCs = true,
+		Walls = true
+	})
+	AimSpeed = AimAssist:CreateSlider({
+		Name = 'Aim Speed',
+		Min = 1,
+		Max = 20,
+		Default = 6
+	})
+	Distance = AimAssist:CreateSlider({
+		Name = 'Distance',
+		Min = 1,
+		Max = 30,
+		Default = 30,
+		Suffx = function(val)
+			return val == 1 and 'stud' or 'studs'
+		end
+	})
+	AngleSlider = AimAssist:CreateSlider({
+		Name = 'Max angle',
+		Min = 1,
+		Max = 360,
+		Default = 70
+	})
+	ClickAim = AimAssist:CreateToggle({
+		Name = 'Click Aim',
+		Default = true
+	})
+	Vertical = AimAssist:CreateToggle({
+		Name = 'Vertical Aim'
+	})
+	StrafeIncrease = AimAssist:CreateToggle({
+		Name = 'Strafe increase'
+	})
+end)
+
+run(function()
+	local Value
+	local old
+	
+	Reach = vape.Categories.Combat:CreateModule({
+		Name = 'Reach',
+		Function = function(callback)
+			if callback then
+				old = hookfunction(tribes.Melee.Detect, function(...)
+					local pack = table.pack(...)
+					pack[2] += Value.Value
+	
+					return old(unpack(pack, 1, pack.n))
+				end)
+			else
+				if old then
+					restorefunction(tribes.Melee.Detect)
+					old = nil
+				end
+			end
+		end,
+		Tooltip = 'Extends attack reach'
+	})
+	Value = Reach:CreateSlider({
+		Name = 'Range',
+		Min = 0,
+		Max = 4,
+		Default = 4,
+		Suffix = function(val)
+			return val == 1 and 'stud' or 'studs'
+		end
+	})
+end)
 
 run(function()
 	local SilentAim
@@ -179,6 +319,20 @@ run(function()
 	
 					if handler.lastThrow then
 						return (lookDir - Vector3.new(0, ((handler.kind == 'Bomb') and 0.16) or (((handler.kind == 'Sling') and 0.05) or (((handler.kind ~= 'Javelin') and 0.01) or 0.04)), 0)).Unit
+					end
+	
+					if handler.lastShot and handler.kind ~= 'Blunderbuss' then
+						local spread
+						if handler.kind == 'Crossbow' then
+							spread = 0
+						elseif handler:Aimed() then
+							spread = handler.tuning.spreadAim or 0
+						else
+							spread = handler.tuning.spreadHip or 0
+						end
+	
+						local spreadDir = tribes.Combat.SpreadDir(lookDir, spread, handler:Seed(tribes.State.shotId + 1), 0)
+						return (CFrame.lookAt(Vector3.zero, lookDir) * CFrame.lookAt(Vector3.zero, lookDir):ToObjectSpace(CFrame.lookAt(Vector3.zero, spreadDir)):Inverse()).LookVector
 					end
 	
 					return lookDir
@@ -330,6 +484,30 @@ run(function()
 			end
 		end,
 		Tooltip = 'Prevent the player from taking knockback'
+	})
+end)
+
+run(function()
+	local AntiFall
+	
+	AntiFall = vape.Categories.Blatant:CreateModule({
+		Name = 'AntiFall',
+		Function = function(callback)
+			if callback then
+				AntiFall:Clean(runService.Heartbeat:Connect(function()
+					if entitylib.isAlive then
+						local root = entitylib.character.RootPart
+						local diff = math.max(root.Position.Y, -29.9) - root.Position.Y
+	
+						if math.abs(diff) > 0 then
+							root.CFrame += Vector3.new(0, diff, 0)
+							root.AssemblyLinearVelocity *= Vector3.new(1, 0, 1)
+						end
+					end
+				end))
+			end
+		end,
+		Tooltip = 'Prevents you from dying to the void'
 	})
 end)
 
@@ -671,19 +849,39 @@ end)
 
 run(function()
 	local AutoQueue
+	local Delay
+	local Notification
 	
 	AutoQueue = vape.Categories.Utility:CreateModule({
 		Name = 'AutoQueue',
 		Function = function(callback)
 			if callback then
 				AutoQueue:Clean(vapeEvents.MatchEnded.Event:Connect(function()
-					task.spawn(function()
+					if Notification.Enabled and Delay.Value > 0 then
+						notif('AutoQueue', 'Playing again in '..string.format('%.1f', Delay.Value)..' seconds!', Delay.Value)
+					end
+	
+					task.delay(Delay.Value, function()
 						replicatedStorage.Remotes.QueueAction:InvokeServer('PlayAgain')
 					end)
 				end))
 			end
 		end,
 		Tooltip = 'Automatically requeue after the match ends.'
+	})
+	Delay = AutoQueue:CreateSlider({
+		Name = 'Delay',
+		Min = 0,
+		Max = 2,
+		Default = 1,
+		Decimal = 10,
+		Suffix = function(val)
+			return val == 1 and 'second' or 'seconds'
+		end
+	})
+	Notification = AutoQueue:CreateToggle({
+		Name = 'Notification',
+		Default = true
 	})
 end)
 
