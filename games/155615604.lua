@@ -3468,7 +3468,6 @@ run(function()
 									thealth = v.Health
 								end
 	
-								print(tent)
 								tent = v
 								ttimer = os.clock() + 0.5
 								break

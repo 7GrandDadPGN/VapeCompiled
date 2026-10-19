@@ -242,6 +242,7 @@ end)
 
 run(function()
 	local Value
+	local Arc
 	local old
 	
 	Reach = vape.Categories.Combat:CreateModule({
@@ -251,6 +252,7 @@ run(function()
 				old = hookfunction(tribes.Melee.Detect, function(...)
 					local pack = table.pack(...)
 					pack[2] += Value.Value
+					pack[3] += Arc.Value
 	
 					return old(unpack(pack, 1, pack.n))
 				end)
@@ -272,6 +274,15 @@ run(function()
 			return val == 1 and 'stud' or 'studs'
 		end
 	})
+	Arc = Reach:CreateSlider({
+		Name = 'Arc',
+		Min = 0,
+		Max = 60,
+		Default = 60,
+		Suffix = function(val)
+			return val == 1 and 'degree' or 'degrees'
+		end
+	})
 end)
 
 run(function()
@@ -283,6 +294,8 @@ run(function()
 	local CircleTransparency
 	local CircleFilled
 	local CircleObject
+	local ProjectileRaycast = RaycastParams.new()
+	ProjectileRaycast.RespectCanCollide = true
 	local old
 	
 	local function Hook(...)
@@ -300,25 +313,43 @@ run(function()
 				Range = Range.Value,
 				Part = 'RootPart',
 				Players = Target.Players.Enabled,
-				NPCs = Target.NPCs.Enabled
+				NPCs = Target.NPCs.Enabled,
+				Wallcheck = Target.Walls.Enabled and true or nil
 			})
 	
 			if entity then
 				local targetPart = entity.RootPart
 				local origin = ... or gameCamera.CFrame.Position
 				local projSpeed = handler.tuning.speed or (handler.tuning.speedMax or 200)
+				local gravity = handler.tuning.gravity or (handler.spreadNow and 0 or 60)
+				ProjectileRaycast.FilterDescendantsInstances = {gameCamera, entity.Character}
+				ProjectileRaycast.CollisionGroup = targetPart.CollisionGroup
 	
 				if handler.drawStart then
 					projSpeed = select(2, tribes.Combat.DrawnShot(handler.tuning, debug.getstack(3, 4)))
 				end
 	
-				local calc = prediction.SolveTrajectory(origin, projSpeed, math.abs(handler.tuning.gravity or (handler.spreadNow and 0 or 60)), targetPart.Position, entity.RootPart.AssemblyLinearVelocity)
+				if handler.tuning.throw then
+					projSpeed = handler.tuning.throw.speed or 120
+					gravity = handler.tuning.throw.gravity or 0
+				end
+	
+				local calc = prediction.SolveTrajectory(origin, projSpeed, math.abs(gravity), targetPart.Position, targetPart.AssemblyLinearVelocity, workspace.Gravity, entity.HipHeight, nil, ProjectileRaycast)
 				if calc then
 					local lookDir = CFrame.lookAt(origin, calc).LookVector
 					targetinfo.Targets[entity] = os.clock() + 1
 	
 					if handler.maxCharges then
 						return (lookDir - Vector3.new(0, ((handler.kind == 'Bomb') and 0.16) or (((handler.kind == 'Sling') and 0.05) or (((handler.kind ~= 'Javelin') and 0.01) or 0.04)), 0)).Unit
+					end
+	
+					if handler.tuning.throw then
+						local aimPoint = debug.getstack(3, 5)
+						local someMag = (aimPoint - origin).Magnitude
+	
+						if gravity > 0 and someMag > 1 then
+							return (lookDir * someMag - Vector3.new(0, 0.5 * gravity * (someMag / projSpeed) * (someMag / projSpeed), 0)).Unit
+						end
 					end
 	
 					if handler.spreadNow and handler.kind ~= 'Blunderbuss' then
