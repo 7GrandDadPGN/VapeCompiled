@@ -787,7 +787,7 @@ run(function()
 										dir = sanitizeAngle(CFrame.lookAt(localPos + Vector3.new(0, 1.5, 0), attacked[1].Entity.RootPart.Position)),
 										tool = tool,
 										hits = targets,
-										k = math.floor((cooldown + hitDelay + (rand:NextNumber() * 0.03)) * 1000)
+										k = math.floor((hitDelay + (rand:NextNumber() * 0.03)) * 1000)
 									})
 	
 									if AutoBlock.Enabled and handler.tuning.block then
@@ -1616,7 +1616,7 @@ run(function()
 					end
 	
 					task.delay(Delay.Value, function()
-						replicatedStorage.Remotes.QueueAction:InvokeServer('PlayAgain')
+						replicatedStorage.Remotes.QueueAction:InvokeServer('PlayAgain', 'menu')
 					end)
 				end))
 			end
@@ -1735,7 +1735,7 @@ run(function()
 					if (not lplr:GetAttribute('MatchId') or lplr:GetAttribute('MatchId') == '') then
 						local item = tribes.Economy.ReadyList()[1]
 						if item then
-							tribes.Economy.Upgrade(item)
+							tribes.Economy.Upgrade(item, 'card')
 						end
 					end
 	
