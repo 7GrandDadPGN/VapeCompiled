@@ -32,6 +32,7 @@ local sessioninfo = vape.Libraries.sessioninfo
 local getfontbounds = vape.Libraries.getfontbounds
 
 local tribes = {}
+local HitboxHook = {Hooks = {}}
 local isMatch = false
 
 local function isFriend(plr, recolor)
@@ -167,6 +168,51 @@ run(function()
 	end))
 end)
 
+run(function()
+	local oldhitbox
+
+	local function Hook(...)
+		local args = table.pack(...)
+		for _, v in HitboxHook.Hooks do
+			if v[2](args) then return end
+		end
+
+		return oldhitbox(unpack(args, 1, args.n))
+	end
+
+	function HitboxHook:Add(key, val, priority)
+		table.insert(self.Hooks, {key, val, priority or 0})
+		table.sort(self.Hooks, function(a, b)
+			return a[3] < b[3]
+		end)
+
+		if not oldhitbox then
+			oldhitbox = hookfunction(tribes.Melee.Detect, function(...)
+				return Hook(...)
+			end)
+		end
+	end
+
+	function HitboxHook:Remove(key)
+		for i, v in self.Hooks do
+			if v[1] == key then
+				table.remove(self.Hooks, i)
+				break
+			end
+		end
+
+		if oldhitbox and not next(self.Hooks) then
+			if restorefunction then
+				restorefunction(tribes.Melee.Detect)
+			else
+				hookfunction(tribes.Melee.Detect, oldhitbox)
+			end
+
+			oldhitbox = nil
+		end
+	end
+end)
+
 for _, v in {'AutoClicker', 'TriggerBot', 'Jesus', 'AutoRejoin', 'Disabler', 'MurderMystery', 'Parkour', 'Wallhop'} do
 	vape:Remove(v)
 end
@@ -258,18 +304,12 @@ run(function()
 		Name = 'Reach',
 		Function = function(callback)
 			if callback then
-				old = hookfunction(tribes.Melee.Detect, function(...)
-					local pack = table.pack(...)
-					pack[2] += Value.Value
-					pack[3] += Arc.Value
-	
-					return old(unpack(pack, 1, pack.n))
+				HitboxHook:Add('Reach', function(args)
+					args[2] += Value.Value
+					args[3] = math.min(args[3] + Arc.Value, 90)
 				end)
 			else
-				if old then
-					restorefunction(tribes.Melee.Detect)
-					old = nil
-				end
+				HitboxHook:Remove('Reach')
 			end
 		end,
 		Tooltip = 'Extends attack reach'
@@ -509,6 +549,84 @@ run(function()
 end)
 
 run(function()
+	local SilentAura
+	local Targets
+	local AttackRange
+	local AngleSlider
+	
+	SilentAura = vape.Categories.Combat:CreateModule({
+		Name = 'SilentAura',
+		Function = function(callback)
+			if callback then
+				local old
+				SilentAura:Clean(runService.PostSimulation:Connect(function()
+					if entitylib.isAlive and tribes.State.handler and tribes.State.handler.lastSwing then
+						local localPos = entitylib.character.RootPart.Position
+						local localFacing = entitylib.character.RootPart.CFrame.LookVector * Vector3.new(1, 0, 1)
+						local entities = entitylib.AllPosition({
+							Range = AttackRange.Value,
+							Wallcheck = Targets.Walls.Enabled or nil,
+							Part = 'RootPart',
+							Players = Targets.Players.Enabled,
+							NPCs = Targets.NPCs.Enabled,
+							Limit = 10
+						})
+	
+						if #entities > 0 then
+							for _, entity in entities do
+								local cmpPos = entity.RootPart.Position
+								local delta = (cmpPos - localPos)
+								local yaw = select(2, gameCamera.CFrame:ToEulerAnglesYXZ())
+								local angle = math.abs(CFrame.fromEulerAnglesYXZ(0, yaw, 0).LookVector:Angle(delta * Vector3.new(1, 0, 1)))
+								if angle > (math.rad(AngleSlider.Value) / 2) then
+									continue
+								end
+	
+								targetinfo.Targets[entity] = os.clock() + 1
+								old = gameCamera.CFrame
+								gameCamera.CFrame = CFrame.lookAlong(old.Position, CFrame.lookAt(localPos, cmpPos).LookVector)
+								if angle > math.rad(100) then
+									entitylib.character.RootPart.CFrame = CFrame.lookAlong(localPos, delta * Vector3.new(1, 0, 1))
+								end
+	
+								break
+							end
+						end
+					end
+				end))
+	
+				SilentAura:Clean(runService.Heartbeat:Connect(function()
+					if old then
+						gameCamera.CFrame = old
+						old = nil
+					end
+				end))
+			end
+		end,
+		Tooltip = 'Silently adjust your camera towards nearby targets.'
+	})
+	Targets = SilentAura:CreateTargets({
+		Players = true,
+		NPCs = true
+	})
+	AttackRange = SilentAura:CreateSlider({
+		Name = 'Attack range',
+		Min = 1,
+		Max = 14,
+		Default = 14,
+		Suffix = function(val)
+			return val == 1 and 'stud' or 'studs'
+		end
+	})
+	AngleSlider = SilentAura:CreateSlider({
+		Name = 'Max angle',
+		Min = 1,
+		Max = 360,
+		Default = 90
+	})
+end)
+
+run(function()
 	local Velocity
 	
 	local function LocalAdded(char)
@@ -560,8 +678,6 @@ end)
 run(function()
 	local Killaura
 	local Targets
-	local CPS
-	local SwingRange
 	local AttackRange
 	local AngleSlider
 	local Max
@@ -574,6 +690,7 @@ run(function()
 	local ParticleColor2
 	local ParticleSize
 	local Particles, Boxes, AttackDelay = {}, {}, os.clock()
+	local rand = Random.new()
 	
 	local function getAttackData()
 		if Mouse.Enabled then
@@ -637,11 +754,12 @@ run(function()
 									entitylib.character.RootPart.CFrame = CFrame.lookAlong(localPos, delta * Vector3.new(1, 0, 1))
 								end
 	
+								handler.lastSwing = os.clock()
 								if AttackDelay < os.clock() and (AutoBlock.Enabled or not tribes.State.handler.blocking) then
 									local targets = {}
-									handler.lastSwing = os.clock()
+									local cooldown = handler:Cooldown()
 	
-									AttackDelay = os.clock() + handler:Cooldown()
+									AttackDelay = os.clock() + cooldown
 									for _, data in attacked do
 										table.insert(targets, data.Entity.Character)
 									end
@@ -653,6 +771,7 @@ run(function()
 									local oneHanded = handler:OneHanded()
 									local comboTable = oneHanded and (handler.tuning.oneHanded.combo or {1}) or (handler.tuning.combo or {1})
 									local animTable = oneHanded and handler.preset.oneSwings or handler.preset.swings or {}
+									local hitDelay = handler.preset.hitDelay or 0.1
 									handler.combo = (handler.combo % #comboTable) + 1
 									local finisher = (#comboTable > 2) and (handler.combo == #comboTable)
 									tribes.Util.PlayAnim(handler.ctx.animator, animTable[((handler.combo - 1) % math.max(1, #animTable)) + 1], (handler.preset.swingSpeed or 1) * (finisher and 0.95 or 1), 0.05)
@@ -660,14 +779,15 @@ run(function()
 									handler.ctx.emit('Swing', {
 										step = handler.combo,
 										finisher = finisher,
-										hitDelay = handler.preset.hitDelay or 0.1,
+										hitDelay = hitDelay,
 										oneHanded = oneHanded
 									})
 	
 									handler.ctx.send('Swing', {
 										dir = sanitizeAngle(CFrame.lookAt(localPos + Vector3.new(0, 1.5, 0), attacked[1].Entity.RootPart.Position)),
 										tool = tool,
-										hits = targets
+										hits = targets,
+										k = math.floor((cooldown + hitDelay + (rand:NextNumber() * 0.03)) * 1000)
 									})
 	
 									if AutoBlock.Enabled and handler.tuning.block then
