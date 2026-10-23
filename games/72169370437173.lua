@@ -20,6 +20,7 @@ local textChatService = cloneref(game:GetService('TextChatService'))
 local runService = cloneref(game:GetService('RunService'))
 local guiService = cloneref(game:GetService('GuiService'))
 local coreGui = cloneref(game:GetService('CoreGui'))
+local vim = cloneref(Instance.new('VirtualInputManager'))
 
 local gameCamera = workspace.CurrentCamera
 local lplr = playersService.LocalPlayer
@@ -113,6 +114,7 @@ run(function()
 	}
 
 	tribes.State = debug.getupvalue(tribes.CombatController.State, 2)
+	tribes.Handlers = debug.getupvalue(debug.getupvalue(tribes.CombatController.Equip, 11), 10)
 	tribes.SetSpeed = debug.getupvalue(debug.getupvalue(tribes.CombatController.Equip, 11), 15)
 
 	local kills = sessioninfo:AddItem('Kills')
@@ -346,6 +348,7 @@ run(function()
 	local CircleObject
 	local ProjectileRaycast = RaycastParams.new()
 	ProjectileRaycast.RespectCanCollide = true
+	local Toggles = {}
 	local old
 	
 	local function Hook(...)
@@ -359,6 +362,14 @@ run(function()
 		end
 	
 		if handler then
+			if type(tribes.Handlers) == 'table' then
+				for index, obj in next, tribes.Handlers do
+					if getmetatable(handler) == obj and not Toggles[index].Enabled then
+						return old(...)
+					end
+				end
+			end
+	
 			local entity = entitylib.EntityMouse({
 				Range = Range.Value,
 				Part = Part.Value,
@@ -546,6 +557,18 @@ run(function()
 		Darker = true,
 		Visible = false
 	})
+	
+	if type(tribes.Handlers) == 'table' then
+		for index in next, tribes.Handlers do
+			if type(index) == 'string' then
+				Toggles[index] = SilentAim:CreateToggle({
+					Name = index,
+					Default = true,
+					Darker = true
+				})
+			end
+		end
+	end
 end)
 
 run(function()
@@ -553,6 +576,7 @@ run(function()
 	local Targets
 	local AttackRange
 	local AngleSlider
+	local AutoBlock
 	
 	SilentAura = vape.Categories.Combat:CreateModule({
 		Name = 'SilentAura',
@@ -592,6 +616,18 @@ run(function()
 								break
 							end
 						end
+	
+						--[[if AutoBlock.Enabled and tribes.State.handler.tuning.block then
+							if tribes.State.handler:Ready() and #entities > 0 then
+								tribes.State.handler:SetBlock(false)
+								tribes.State.handler:Swing()
+							end
+	
+							tribes.State.handler:SetBlock(true)
+							if vape.ThreadFix then
+								setthreadidentity(8)
+							end
+						end]]
 					end
 				end))
 	
@@ -624,6 +660,9 @@ run(function()
 		Max = 360,
 		Default = 90
 	})
+	--[[AutoBlock = SilentAura:CreateToggle({
+		Name = 'AutoBlock'
+	})]]
 end)
 
 run(function()
@@ -758,8 +797,9 @@ run(function()
 								if AttackDelay < os.clock() and (AutoBlock.Enabled or not tribes.State.handler.blocking) then
 									local targets = {}
 									local cooldown = handler:Cooldown()
+									local hitDelay = handler.preset.hitDelay or 0.1
 	
-									AttackDelay = os.clock() + cooldown
+									AttackDelay = os.clock() + cooldown + hitDelay
 									for _, data in attacked do
 										table.insert(targets, data.Entity.Character)
 									end
@@ -771,7 +811,6 @@ run(function()
 									local oneHanded = handler:OneHanded()
 									local comboTable = oneHanded and (handler.tuning.oneHanded.combo or {1}) or (handler.tuning.combo or {1})
 									local animTable = oneHanded and handler.preset.oneSwings or handler.preset.swings or {}
-									local hitDelay = handler.preset.hitDelay or 0.1
 									handler.combo = (handler.combo % #comboTable) + 1
 									local finisher = (#comboTable > 2) and (handler.combo == #comboTable)
 									tribes.Util.PlayAnim(handler.ctx.animator, animTable[((handler.combo - 1) % math.max(1, #animTable)) + 1], (handler.preset.swingSpeed or 1) * (finisher and 0.95 or 1), 0.05)
@@ -787,11 +826,12 @@ run(function()
 										dir = sanitizeAngle(CFrame.lookAt(localPos + Vector3.new(0, 1.5, 0), attacked[1].Entity.RootPart.Position)),
 										tool = tool,
 										hits = targets,
-										k = math.floor((hitDelay + (rand:NextNumber() * 0.03)) * 1000)
+										k = math.floor((hitDelay + (rand:NextNumber() * 0.03)) * 1000),
+										w = math.floor(os.clock() * 1000) % 9973
 									})
 	
 									if AutoBlock.Enabled and handler.tuning.block then
-										tribes.State.handler:SetBlock(true)
+										handler:SetBlock(true)
 									end
 	
 									if vape.ThreadFix then
@@ -801,7 +841,7 @@ run(function()
 							end
 						elseif AutoBlock.Enabled and handler.tuning.block then
 							if tribes.Util.CanAct() then
-								tribes.State.handler:SetBlock(true)
+								handler:SetBlock(true)
 							end
 	
 							if vape.ThreadFix then
@@ -1616,7 +1656,13 @@ run(function()
 					end
 	
 					task.delay(Delay.Value, function()
-						replicatedStorage.Remotes.QueueAction:InvokeServer('PlayAgain', 'menu')
+						local gui = lplr.PlayerGui:FindFirstChild('TR_Menus')
+						gui = gui and gui:FindFirstChild('MatchEnd', true) or nil
+						gui = gui and gui:FindFirstChild('PlayAgain', true) or nil
+	
+						if gui and gui:IsA('TextButton') then
+							firesignal(gui.Activated)
+						end
 					end)
 				end))
 			end
@@ -1732,12 +1778,31 @@ run(function()
 		Function = function(callback)
 			if callback then
 				repeat
-					if (not lplr:GetAttribute('MatchId') or lplr:GetAttribute('MatchId') == '') then
-						local item = tribes.Economy.ReadyList()[1]
-						if item then
-							tribes.Economy.Upgrade(item, 'card')
+					local gui = lplr.PlayerGui:FindFirstChild('TR_Menus')
+					gui = gui and gui:FindFirstChild('Collection', true) or nil--.TR_Menus.Canvas.Collection
+	
+					if gui and gui:IsA('Frame') then
+						local holder = gui:FindFirstChild('Grid', true)
+	
+						if holder and holder:IsA('ScrollingFrame') then
+							for _, button in holder:GetChildren() do
+								if button:IsA('TextButton') then
+									local upgrade = button:FindFirstChild('Upgrade', true)
+	
+									if upgrade and upgrade:IsA('TextButton') and upgrade.Visible then
+										firesignal(upgrade.Activated)
+										break
+									end
+								end
+							end
 						end
 					end
+					--[[if (not isMatch) and (not lplr:GetAttribute('MatchId') or lplr:GetAttribute('MatchId') == '') then
+						local item = tribes.Economy.ReadyList()[1]
+						if item then
+							tribes.Economy.Upgrade(item, 'collection')
+						end
+					end]]
 	
 					task.wait(0.05)
 				until not AutoUpgrade.Enabled
