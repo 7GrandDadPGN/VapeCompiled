@@ -20,6 +20,7 @@ local textChatService = cloneref(game:GetService('TextChatService'))
 local runService = cloneref(game:GetService('RunService'))
 local guiService = cloneref(game:GetService('GuiService'))
 local coreGui = cloneref(game:GetService('CoreGui'))
+local contextActionService = cloneref(game:GetService('ContextActionService'))
 local vim = cloneref(Instance.new('VirtualInputManager'))
 
 local gameCamera = workspace.CurrentCamera
@@ -34,6 +35,7 @@ local getfontbounds = vape.Libraries.getfontbounds
 
 local tribes = {}
 local HitboxHook = {Hooks = {}}
+local VelocityTracker = {Entries = setmetatable({}, {__mode = 'k'})}
 local isMatch = false
 
 local function isFriend(plr, recolor)
@@ -62,13 +64,10 @@ end
 
 run(function()
 	entitylib.targetCheck = function(entity)
-		if entity.TeamCheck then
-			return entity:TeamCheck()
-		end
-		if entity.NPC then return true end
+		if entity.NPC then return lplr:GetAttribute('Team') ~= entity.Character:GetAttribute('Team') end
 		if isFriend(entity.Player) then return false end
 		if not select(2, whitelist:get(entity.Player)) then return false end
-		return lplr:GetAttribute('Team') ~= entity.Player:GetAttribute('Team')
+		return lplr:GetAttribute('Team') ~= entity.Character:GetAttribute('Team')
 	end
 
 	entitylib.addPlayer = function(plr)
@@ -78,9 +77,14 @@ run(function()
 	local oldstart = entitylib.start
 	local function customEntity(entity)
 		local plr = playersService:GetPlayerFromCharacter(entity)
-		entitylib.addEntity(entity, plr, not plr and function(self)
-			return lplr:GetAttribute('Team') ~= self.Character:GetAttribute('Team')
-		end or nil)
+
+		entity:GetAttributeChangedSignal('Team'):Connect(function()
+			if plr ~= lplr and vape.Loaded ~= nil then
+				entitylib.refreshEntity(entity, plr)
+			end
+		end)
+
+		entitylib.addEntity(entity, plr)
 	end
 
 	entitylib.start = function()
@@ -168,6 +172,30 @@ run(function()
 			end
 		end
 	end))
+
+	vape:Clean(task.spawn(function()
+		repeat
+			for _, entity in entitylib.List do
+				if not VelocityTracker.Entries[entity.RootPart] then
+					VelocityTracker.Entries[entity.RootPart] = {}
+				end
+
+				local entry = VelocityTracker.Entries[entity.RootPart]
+				repeat
+					local _, obj = next(entry)
+					if obj and (os.clock() - obj[2]) > 0.15 then
+						table.remove(entry, 1)
+					else
+						break
+					end
+				until false
+
+				table.insert(entry, {entity.RootPart.AssemblyLinearVelocity, os.clock()})
+			end
+
+			task.wait()
+		until false
+	end))
 end)
 
 run(function()
@@ -212,6 +240,22 @@ run(function()
 
 			oldhitbox = nil
 		end
+	end
+
+	function VelocityTracker:Get(root)
+		local entry = self.Entries[root]
+		if entry and #entry > 0 then
+			local final = Vector3.zero
+			for _, velo in entry do
+				final += velo[1]
+			end
+
+			final /= #entry
+
+			return Vector3.new(final.X, root.AssemblyLinearVelocity.Y, final.Z)
+		end
+
+		return root.AssemblyLinearVelocity
 	end
 end)
 
@@ -342,6 +386,7 @@ run(function()
 	local Part
 	local Range
 	local HitChance
+	local Prediction
 	local CircleColor
 	local CircleTransparency
 	local CircleFilled
@@ -395,7 +440,7 @@ run(function()
 					gravity = handler.tuning.throw.gravity or 0
 				end
 	
-				local calc = prediction.SolveTrajectory(origin, projSpeed, math.abs(gravity), targetPart.Position, targetPart.AssemblyLinearVelocity, workspace.Gravity, entity.HipHeight, nil, ProjectileRaycast)
+				local calc = prediction.SolveTrajectory(origin, projSpeed, math.abs(gravity), targetPart.Position, Prediction.Enabled and VelocityTracker:Get(entity.RootPart) or targetPart.AssemblyLinearVelocity, workspace.Gravity, entity.HipHeight, nil, ProjectileRaycast)
 				if calc then
 					local lookDir = CFrame.lookAt(origin, calc).LookVector
 					targetinfo.Targets[entity] = os.clock() + 1
@@ -499,6 +544,9 @@ run(function()
 		Max = 100,
 		Default = 85,
 		Suffix = '%'
+	})
+	Prediction = SilentAim:CreateToggle({
+		Name = 'Velocity prediction'
 	})
 	SilentAim:CreateToggle({
 		Name = 'Range Circle',
@@ -737,7 +785,7 @@ run(function()
 		end
 	
 		if tribes.State.handler and tribes.State.handler.lastSwing then
-			return tribes.State.tool
+			return tribes.State.handler.ctx.tool
 		end
 	end
 	
@@ -1080,10 +1128,10 @@ run(function()
 	Folder.Parent = vape.gui
 	local methodused
 	
-	local function getInventory(entity)
-		local cmpId = entity.Character:GetAttribute('CombatantId')
-		if tribes.UIState.Match then
-			for _, team in tribes.UIState.Match.teams do
+	local function getInventory(entity, state)
+		local cmpId = type(entity) == 'string' and entity or entity.Character:GetAttribute('CombatantId')
+		if state or tribes.UIState.Match then
+			for _, team in (state or tribes.UIState.Match).teams do
 				for _, member in team.members do
 					if member.id == cmpId then
 						local items = table.clone(member.loadout.items)
@@ -1096,6 +1144,24 @@ run(function()
 				end
 			end
 		end
+	end
+	
+	local function deepEq(tab, tab2)
+		if type(tab) ~= 'table' or type(tab2) ~= 'table' then
+			return tab == tab2
+		end
+	
+		if #tab ~= #tab2 then
+			return false
+		end
+	
+		for i = 1, #tab do
+			if tab[i] ~= tab2[i] then
+				return false
+			end
+		end
+	
+		return true
 	end
 	
 	local Added = {
@@ -1384,6 +1450,32 @@ run(function()
 						end
 						Added[methodused](entity)
 					end))
+	
+					if Equipment.Enabled then
+						local state = tribes.UIState.Match
+						NameTags:Clean(replicatedStorage.Remotes.MatchState.OnClientEvent:Connect(function(newState)
+							if state then
+								for _, team in state.teams do
+									for _, member in team.members do
+										if not deepEq(getInventory(member.id, state), getInventory(member.id, newState)) then
+											for _, entity in entitylib.List do
+												if entity.Character:GetAttribute('CombatantId') == member.id then
+													if Reference[entity] then
+														Removed[methodused](entity)
+													end
+	
+													Added[methodused](entity)
+													break
+												end
+											end
+										end
+									end
+								end
+							end
+	
+							state = newState
+						end))
+					end
 				end
 				if Updated[methodused] then
 					NameTags:Clean(entitylib.Events.EntityUpdated:Connect(Updated[methodused]))
@@ -1768,6 +1860,30 @@ run(function()
 			end
 		end
 	end)
+end)
+
+run(function()
+	local AutoSkip
+	
+	AutoSkip = vape.Categories.Inventory:CreateModule({
+		Name = 'AutoSkip',
+		Function = function(callback)
+			if callback then
+				repeat
+					local bind = contextActionService:GetBoundActionInfo('TR_RevealKeys')
+					if bind.priorityLevel == 3050 and not guiService.MenuIsOpen then
+						vim:SendKeyEvent(true, Enum.KeyCode.ButtonB, false, nil)
+						vim:SendKeyEvent(false, Enum.KeyCode.ButtonB, false, nil)
+						vim:SendKeyEvent(true, Enum.KeyCode.ButtonA, false, nil)
+						vim:SendKeyEvent(false, Enum.KeyCode.ButtonA, false, nil)
+					end
+	
+					task.wait(0.05)
+				until not AutoSkip.Enabled
+			end
+		end,
+		Tooltip = 'Automatically skip through all crate popups'
+	})
 end)
 
 run(function()
