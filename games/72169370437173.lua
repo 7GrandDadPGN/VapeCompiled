@@ -37,6 +37,22 @@ local tribes = {}
 local HitboxHook = {Hooks = {}}
 local VelocityTracker = {Entries = setmetatable({}, {__mode = 'k'})}
 local isMatch = false
+local realInput
+
+local function dumpInput()
+	if not realInput then
+		local connection
+		connection = inputService.InputEnded:Connect(function(input)
+			if input.KeyCode == Enum.KeyCode.Return then
+				realInput = input
+				connection:Disconnect()
+			end
+		end)
+
+		vim:SendKeyEvent(true, Enum.KeyCode.Return, false, nil)
+		vim:SendKeyEvent(false, Enum.KeyCode.Return, false, nil)
+	end
+end
 
 local function isFriend(plr, recolor)
 	if vape.Categories.Friends.Options['Use friends'].Enabled then
@@ -183,7 +199,7 @@ run(function()
 				local entry = VelocityTracker.Entries[entity.RootPart]
 				repeat
 					local _, obj = next(entry)
-					if obj and (os.clock() - obj[2]) > 0.15 then
+					if obj and (os.clock() - obj[2]) > 0.5 then
 						table.remove(entry, 1)
 					else
 						break
@@ -242,17 +258,24 @@ run(function()
 		end
 	end
 
-	function VelocityTracker:Get(root)
+	function VelocityTracker:Get(root, diff)
 		local entry = self.Entries[root]
-		if entry and #entry > 0 then
-			local final = Vector3.zero
+
+		if entry and diff then
+			local final, count = Vector3.zero, 0
+			local ctime = os.clock()
+
 			for _, velo in entry do
-				final += velo[1]
+				if (ctime - velo[2]) <= diff then
+					final += velo[1]
+					count += 1
+				end
 			end
 
-			final /= #entry
-
-			return Vector3.new(final.X, root.AssemblyLinearVelocity.Y, final.Z)
+			if count > 0 then
+				final /= count
+				return Vector3.new(final.X, root.AssemblyLinearVelocity.Y, final.Z)
+			end
 		end
 
 		return root.AssemblyLinearVelocity
@@ -387,6 +410,7 @@ run(function()
 	local Range
 	local HitChance
 	local Prediction
+	local PredictionTime
 	local CircleColor
 	local CircleTransparency
 	local CircleFilled
@@ -440,7 +464,7 @@ run(function()
 					gravity = handler.tuning.throw.gravity or 0
 				end
 	
-				local calc = prediction.SolveTrajectory(origin, projSpeed, math.abs(gravity), targetPart.Position, Prediction.Enabled and VelocityTracker:Get(entity.RootPart) or targetPart.AssemblyLinearVelocity, workspace.Gravity, entity.HipHeight, nil, ProjectileRaycast)
+				local calc = prediction.SolveTrajectory(origin, projSpeed, math.abs(gravity), targetPart.Position + (Part.Value == 'Head' and Vector3.new(0, 0.3, 0) or Vector3.zero), Prediction.Enabled and VelocityTracker:Get(entity.RootPart, PredictionTime.Value) or targetPart.AssemblyLinearVelocity, workspace.Gravity, entity.HipHeight, nil, ProjectileRaycast)
 				if calc then
 					local lookDir = CFrame.lookAt(origin, calc).LookVector
 					targetinfo.Targets[entity] = os.clock() + 1
@@ -546,7 +570,19 @@ run(function()
 		Suffix = '%'
 	})
 	Prediction = SilentAim:CreateToggle({
-		Name = 'Velocity prediction'
+		Name = 'Velocity prediction',
+		Function = function(callback)
+			PredictionTime.Object.Visible = callback
+		end
+	})
+	PredictionTime = SilentAim:CreateSlider({
+		Name = 'Prediction time',
+		Min = 0,
+		Max = 0.5,
+		Default = 0.15,
+		Decimal = 100,
+		Visible = false,
+		Darker = true
 	})
 	SilentAim:CreateToggle({
 		Name = 'Range Circle',
@@ -624,13 +660,15 @@ run(function()
 	local Targets
 	local AttackRange
 	local AngleSlider
+	local AutoSwing
 	local AutoBlock
 	
 	SilentAura = vape.Categories.Combat:CreateModule({
 		Name = 'SilentAura',
 		Function = function(callback)
 			if callback then
-				local old
+				local old, didSwing
+	
 				SilentAura:Clean(runService.PostSimulation:Connect(function()
 					if entitylib.isAlive and tribes.State.handler and tribes.State.handler.lastSwing then
 						local localPos = entitylib.character.RootPart.Position
@@ -650,8 +688,14 @@ run(function()
 								local delta = (cmpPos - localPos)
 								local yaw = select(2, gameCamera.CFrame:ToEulerAnglesYXZ())
 								local angle = math.abs(CFrame.fromEulerAnglesYXZ(0, yaw, 0).LookVector:Angle(delta * Vector3.new(1, 0, 1)))
-								if angle > (math.rad(AngleSlider.Value) / 2) then
+	
+								if angle > (math.rad(AngleSlider.Value) / 2) or delta.Y >= 8 then
 									continue
+								end
+	
+								if AutoSwing.Enabled and not tribes.State.handler.holding then
+									vim:SendMouseButtonEvent(gameCamera.ViewportSize.X / 2, gameCamera.ViewportSize.Y / 2, 0, true, nil, 0)
+									didSwing = true
 								end
 	
 								targetinfo.Targets[entity] = os.clock() + 1
@@ -662,6 +706,11 @@ run(function()
 								end
 	
 								break
+							end
+						else
+							if AutoSwing.Enabled and tribes.State.handler.holding and didSwing then
+								vim:SendMouseButtonEvent(gameCamera.ViewportSize.X / 2, gameCamera.ViewportSize.Y / 2, 0, false, nil, 0)
+								didSwing = false
 							end
 						end
 	
@@ -707,6 +756,9 @@ run(function()
 		Min = 1,
 		Max = 360,
 		Default = 90
+	})
+	AutoSwing = SilentAura:CreateToggle({
+		Name = 'Auto swing'
 	})
 	--[[AutoBlock = SilentAura:CreateToggle({
 		Name = 'AutoBlock'
@@ -1091,6 +1143,37 @@ run(function()
 end)
 
 run(function()
+	local old, oldshake, oldslow
+	
+	vape.Categories.Blatant:CreateModule({
+		Name = 'NoRecoil',
+		Function = function(callback)
+			if callback then
+				old = hookfunction(tribes.Util.Recoil, function() end)
+				oldshake = hookfunction(tribes.Util.Shake, function() end)
+				oldslow = hookfunction(tribes.Util.RecoilSlow, function() end)
+			else
+				if old then
+					restorefunction(tribes.Util.Recoil)
+					old = nil
+				end
+	
+				if oldshake then
+					restorefunction(tribes.Util.Shake)
+					oldshake = nil
+				end
+	
+				if oldslow then
+					restorefunction(tribes.Util.RecoilSlow)
+					oldslow = nil
+				end
+			end
+		end,
+		Tooltip = 'Remove camera shake & recoil from many aspects of the game.'
+	})
+end)
+
+run(function()
 	vape.Categories.Blatant:CreateModule({
 		Name = 'NoSlowdown',
 		Function = function(callback)
@@ -1104,6 +1187,70 @@ run(function()
 			end
 		end,
 		Tooltip = 'Prevents slowing down when using items.'
+	})
+end)
+
+run(function()
+	local SpinBot
+	local Mode
+	local XToggle
+	local YToggle
+	local ZToggle
+	local Value
+	
+	SpinBot = vape.Categories.Blatant:CreateModule({
+		Name = 'SpinBot',
+		Function = function(callback)
+			if callback then
+				SpinBot:Clean(runService.PreSimulation:Connect(function()
+					if entitylib.isAlive then
+						if Mode.Value == 'RotVelocity' then
+							if entitylib.character.Humanoid.Sit then
+								return
+							end
+	
+							local original = entitylib.character.RootPart.AssemblyAngularVelocity
+							entitylib.character.Humanoid.AutoRotate = false
+							entitylib.character.RootPart.AssemblyAngularVelocity = Vector3.new(XToggle.Enabled and Value.Value or original.X, YToggle.Enabled and Value.Value or original.Y, ZToggle.Enabled and Value.Value or original.Z)
+						elseif Mode.Value == 'CFrame' then
+							if entitylib.character.Humanoid.Sit then
+								return
+							end
+	
+							local val = math.rad((os.clock() * (20 * Value.Value)) % 360)
+							local x, y, z = entitylib.character.RootPart.CFrame:ToOrientation()
+							entitylib.character.RootPart.CFrame = CFrame.new(entitylib.character.RootPart.Position) * CFrame.Angles(XToggle.Enabled and val or x, YToggle.Enabled and val or y, ZToggle.Enabled and val or z)
+						end
+					end
+				end))
+			else
+				if entitylib.isAlive and Mode.Value == 'RotVelocity' then
+					entitylib.character.Humanoid.AutoRotate = true
+				end
+			end
+		end,
+		Tooltip = 'Makes your character spin around in circles (does not work in first person)'
+	})
+	Mode = SpinBot:CreateDropdown({
+		Name = 'Mode',
+		List = {'CFrame', 'RotVelocity'},
+		Tooltip = 'CFrame - Directly adjusts your characters angle\nRotVelocity - Sets the rotation velocity so that you spin'
+	})
+	Value = SpinBot:CreateSlider({
+		Name = 'Speed',
+		Min = 1,
+		Max = 100,
+		Default = 40
+	})
+	XToggle = SpinBot:CreateToggle({
+		Name = 'Spin X'
+	})
+	YToggle = SpinBot:CreateToggle({
+		Name = 'Spin Y',
+		Default = true
+	})
+	ZToggle = SpinBot:CreateToggle({
+		Name = 'Spin Z'
 	})
 end)
 
@@ -1453,27 +1600,29 @@ run(function()
 	
 					if Equipment.Enabled then
 						local state = tribes.UIState.Match
-						NameTags:Clean(replicatedStorage.Remotes.MatchState.OnClientEvent:Connect(function(newState)
-							if state then
-								for _, team in state.teams do
-									for _, member in team.members do
-										if not deepEq(getInventory(member.id, state), getInventory(member.id, newState)) then
-											for _, entity in entitylib.List do
-												if entity.Character:GetAttribute('CombatantId') == member.id then
-													if Reference[entity] then
-														Removed[methodused](entity)
-													end
+						NameTags:Clean(replicatedStorage.Remotes.MatchState.OnClientEvent:Connect(function(newState, ...)
+							task.defer(function()
+								if state then
+									for _, team in state.teams do
+										for _, member in team.members do
+											if not deepEq(getInventory(member.id, state), getInventory(member.id, newState)) then
+												for _, entity in entitylib.List do
+													if entity.Character:GetAttribute('CombatantId') == member.id then
+														if Reference[entity] then
+															Removed[methodused](entity)
+														end
 	
-													Added[methodused](entity)
-													break
+														Added[methodused](entity)
+														break
+													end
 												end
 											end
 										end
 									end
 								end
-							end
 	
-							state = newState
+								state = newState
+							end)
 						end))
 					end
 				end
@@ -1742,18 +1891,20 @@ run(function()
 		Name = 'AutoQueue',
 		Function = function(callback)
 			if callback then
+				dumpInput()
+	
 				AutoQueue:Clean(vapeEvents.MatchEnded.Event:Connect(function()
 					if Notification.Enabled and Delay.Value > 0 then
 						notif('AutoQueue', 'Playing again in '..string.format('%.1f', Delay.Value)..' seconds!', Delay.Value)
 					end
 	
 					task.delay(Delay.Value, function()
-						local gui = lplr.PlayerGui:FindFirstChild('TR_Menus')
-						gui = gui and gui:FindFirstChild('MatchEnd', true) or nil
-						gui = gui and gui:FindFirstChild('PlayAgain', true) or nil
+						local button = lplr.PlayerGui:FindFirstChild('TR_Menus')
+						button = button and button:FindFirstChild('MatchEnd', true) or nil
+						button = button and button:FindFirstChild('PlayAgain', true) or nil
 	
-						if gui and gui:IsA('TextButton') then
-							firesignal(gui.Activated)
+						if button and button:IsA('TextButton') and realInput then
+							firesignal(button.Activated, realInput, 0)
 						end
 					end)
 				end))
@@ -1893,9 +2044,11 @@ run(function()
 		Name = 'AutoUpgrade',
 		Function = function(callback)
 			if callback then
+				dumpInput()
+	
 				repeat
 					local gui = lplr.PlayerGui:FindFirstChild('TR_Menus')
-					gui = gui and gui:FindFirstChild('Collection', true) or nil--.TR_Menus.Canvas.Collection
+					gui = gui and gui:FindFirstChild('Collection', true) or nil
 	
 					if gui and gui:IsA('Frame') then
 						local holder = gui:FindFirstChild('Grid', true)
@@ -1905,8 +2058,8 @@ run(function()
 								if button:IsA('TextButton') then
 									local upgrade = button:FindFirstChild('Upgrade', true)
 	
-									if upgrade and upgrade:IsA('TextButton') and upgrade.Visible then
-										firesignal(upgrade.Activated)
+									if upgrade and upgrade:IsA('TextButton') and upgrade.Visible and realInput then
+										firesignal(upgrade.Activated, realInput, 0)
 										break
 									end
 								end
