@@ -37,20 +37,60 @@ local tribes = {}
 local HitboxHook = {Hooks = {}}
 local VelocityTracker = {Entries = setmetatable({}, {__mode = 'k'})}
 local isMatch = false
-local realInput
+local clickQueue = {}
+local clickThread = nil
 
-local function dumpInput()
-	if not realInput then
-		local connection
-		connection = inputService.InputEnded:Connect(function(input)
-			if input.KeyCode == Enum.KeyCode.Return then
-				realInput = input
-				connection:Disconnect()
-			end
-		end)
+local function clickButton(obj)
+	if not (obj and obj:IsA('TextButton')) then
+		return
+	end
 
-		vim:SendKeyEvent(true, Enum.KeyCode.Return, false, nil)
-		vim:SendKeyEvent(false, Enum.KeyCode.Return, false, nil)
+	if not table.find(clickQueue, obj) then
+		table.insert(clickQueue, obj)
+
+		if not clickThread then
+			clickThread = task.spawn(function()
+				repeat
+					local i, button = next(clickQueue)
+					if i then
+						if button:IsDescendantOf(lplr.PlayerGui) then
+							local cPos = button.AbsolutePosition + guiService:GetGuiInset()
+							local gui = Instance.new('ScreenGui')
+							gui.IgnoreGuiInset = true
+							gui.DisplayOrder = 10000000
+							gui.Parent = vape.gui.Parent
+							local gbutton = Instance.new('TextButton')
+							gbutton.BackgroundTransparency = 1
+							gbutton.Size = UDim2.fromScale(1, 1)
+							gbutton.Text = ''
+							gbutton.Parent = gui
+
+							gbutton.Activated:Connect(function(...)
+								firesignal(button.Activated, ...)
+							end)
+
+							if inputService.TouchEnabled then
+								vim:SendTouchEvent(0, 0, cPos.X, cPos.Y)
+								vim:SendTouchEvent(0, 2, cPos.X, cPos.Y)
+							else
+								vim:SendMouseButtonEvent(cPos.X, cPos.Y, 0, true, gui, 0)
+								vim:SendMouseButtonEvent(cPos.X, cPos.Y, 0, false, gui, 0)
+							end
+
+							gbutton.Activated:Wait()
+							gui:Destroy()
+							task.wait(0.016)
+						end
+
+						table.remove(clickQueue, i)
+					else
+						break
+					end
+				until false
+
+				clickThread = nil
+			end)
+		end
 	end
 end
 
@@ -212,6 +252,15 @@ run(function()
 			task.wait()
 		until false
 	end))
+
+	vape:Clean(function()
+		table.clear(clickQueue)
+
+		if clickThread then
+			task.cancel(clickThread)
+			clickThread = nil
+		end
+	end)
 end)
 
 run(function()
@@ -670,6 +719,12 @@ run(function()
 	local AngleSlider
 	local AutoSwing
 	local AutoBlock
+	local BoxAttackColor
+	local ParticleTexture
+	local ParticleColor1
+	local ParticleColor2
+	local ParticleSize
+	local Particle, Box = nil, nil
 	
 	SilentAura = vape.Categories.Combat:CreateModule({
 		Name = 'SilentAura',
@@ -678,6 +733,8 @@ run(function()
 				local old, didSwing
 	
 				SilentAura:Clean(runService.PostSimulation:Connect(function()
+					local attacked
+	
 					if entitylib.isAlive and tribes.State.handler and tribes.State.handler.lastSwing then
 						local localPos = entitylib.character.RootPart.Position
 						local localFacing = entitylib.character.RootPart.CFrame.LookVector * Vector3.new(1, 0, 1)
@@ -702,10 +759,20 @@ run(function()
 								end
 	
 								if AutoSwing.Enabled and not tribes.State.handler.holding then
-									vim:SendMouseButtonEvent(gameCamera.ViewportSize.X / 2, gameCamera.ViewportSize.Y / 2, 0, true, nil, 0)
+									local gui = lplr.PlayerGui:FindFirstChild('CombatTouch', true)
+									gui = gui and gui.Enabled and gui:FindFirstChild('Attack', true) or nil
+	
+									if gui and gui:IsA('TextButton') and gui.Visible then
+										local cPos = gui.AbsolutePosition + guiService:GetGuiInset()
+										vim:SendTouchEvent(0, 0, cPos.X, cPos.Y)
+									else
+										vim:SendMouseButtonEvent(gameCamera.ViewportSize.X / 2, gameCamera.ViewportSize.Y / 2, 0, true, nil, 0)
+									end
+	
 									didSwing = true
 								end
 	
+								attacked = entity
 								targetinfo.Targets[entity] = os.clock() + 1
 								old = gameCamera.CFrame
 								gameCamera.CFrame = CFrame.lookAlong(old.Position, CFrame.lookAt(localPos, cmpPos).LookVector)
@@ -717,7 +784,16 @@ run(function()
 							end
 						else
 							if AutoSwing.Enabled and tribes.State.handler.holding and didSwing then
-								vim:SendMouseButtonEvent(gameCamera.ViewportSize.X / 2, gameCamera.ViewportSize.Y / 2, 0, false, nil, 0)
+								local gui = lplr.PlayerGui:FindFirstChild('CombatTouch', true)
+								gui = gui and gui.Enabled and gui:FindFirstChild('Attack', true) or nil
+	
+								if gui and gui:IsA('TextButton') and gui.Visible then
+									local cPos = gui.AbsolutePosition + guiService:GetGuiInset()
+									vim:SendTouchEvent(0, 2, cPos.X, cPos.Y)
+								else
+									vim:SendMouseButtonEvent(gameCamera.ViewportSize.X / 2, gameCamera.ViewportSize.Y / 2, 0, false, nil, 0)
+								end
+	
 								didSwing = false
 							end
 						end
@@ -734,14 +810,37 @@ run(function()
 							end
 						end]]
 					end
+	
+					if Box then
+						Box.Adornee = attacked and attacked.RootPart or nil
+						if Box.Adornee then
+							Box.Color3 = Color3.fromHSV(BoxAttackColor.Hue, BoxAttackColor.Sat, BoxAttackColor.Value)
+							Box.Transparency = 1 - BoxAttackColor.Opacity
+						end
+					end
+	
+					if Particle then
+						Particle.Position = attacked and attacked.RootPart.Position or Vector3.new(math.huge, math.huge, math.huge)
+						Particle.Parent = attacked and gameCamera or nil
+					end
 				end))
 	
 				SilentAura:Clean(runService.Heartbeat:Connect(function()
-					if old then
-						gameCamera.CFrame = old
-						old = nil
-					end
+					--task.defer(function()
+						if old then
+							gameCamera.CFrame = old
+							old = nil
+						end
+					--end)
 				end))
+			else
+				if Box then
+					Box.Adornee = nil
+				end
+	
+				if Particle then
+					Particle.Parent = nil
+				end
 			end
 		end,
 		Tooltip = 'Silently adjust your camera towards nearby targets.'
@@ -771,6 +870,120 @@ run(function()
 	--[[AutoBlock = SilentAura:CreateToggle({
 		Name = 'AutoBlock'
 	})]]
+	SilentAura:CreateToggle({
+		Name = 'Show target',
+		Function = function(callback)
+			BoxAttackColor.Object.Visible = callback
+	
+			if callback then
+				Box = Instance.new('BoxHandleAdornment')
+				Box.Adornee = nil
+				Box.AlwaysOnTop = true
+				Box.CFrame = CFrame.new(0, -0.5, 0)
+				Box.Size = Vector3.new(3, 5, 3)
+				Box.ZIndex = 0
+				Box.Parent = vape.holder
+			else
+				Box:Destroy()
+				Box = nil
+			end
+		end
+	})
+	BoxAttackColor = SilentAura:CreateColorSlider({
+		Name = 'Attack Color',
+		Darker = true,
+		DefaultOpacity = 0.5,
+		Visible = false
+	})
+	SilentAura:CreateToggle({
+		Name = 'Target particles',
+		Function = function(callback)
+			ParticleTexture.Object.Visible = callback
+			ParticleColor1.Object.Visible = callback
+			ParticleColor2.Object.Visible = callback
+			ParticleSize.Object.Visible = callback
+	
+			if callback then
+				Particle = Instance.new('Part')
+				Particle.Size = Vector3.new(2, 4, 2)
+				Particle.Anchored = true
+				Particle.CanCollide = false
+				Particle.Transparency = 1
+				Particle.CanQuery = false
+				Particle.Parent = SilentAura.Enabled and gameCamera or nil
+				local particles = Instance.new('ParticleEmitter')
+				particles.Brightness = 1.5
+				particles.Size = NumberSequence.new(ParticleSize.Value)
+				particles.Shape = Enum.ParticleEmitterShape.Sphere
+				particles.Texture = ParticleTexture.Value
+				particles.Transparency = NumberSequence.new(0)
+				particles.Lifetime = NumberRange.new(0.4)
+				particles.Speed = NumberRange.new(16)
+				particles.Rate = 128
+				particles.Drag = 16
+				particles.ShapePartial = 1
+				particles.Color = ColorSequence.new({
+					ColorSequenceKeypoint.new(0, Color3.fromHSV(ParticleColor1.Hue, ParticleColor1.Sat, ParticleColor1.Value)),
+					ColorSequenceKeypoint.new(1, Color3.fromHSV(ParticleColor2.Hue, ParticleColor2.Sat, ParticleColor2.Value))
+				})
+				particles.Parent = Particle
+			else
+				Particle:Destroy()
+				Particle = nil
+			end
+		end
+	})
+	ParticleTexture = SilentAura:CreateTextBox({
+		Name = 'Texture',
+		Default = 'rbxassetid://14736249347',
+		Function = function()
+			if Particle then
+				Particle.ParticleEmitter.Texture = ParticleTexture.Value
+			end
+		end,
+		Darker = true,
+		Visible = false
+	})
+	ParticleColor1 = SilentAura:CreateColorSlider({
+		Name = 'Color Begin',
+		Function = function(hue, sat, val)
+			if Particle then
+				Particle.ParticleEmitter.Color = ColorSequence.new({
+					ColorSequenceKeypoint.new(0, Color3.fromHSV(hue, sat, val)),
+					ColorSequenceKeypoint.new(1, Color3.fromHSV(ParticleColor2.Hue, ParticleColor2.Sat, ParticleColor2.Value))
+				})
+			end
+		end,
+		Darker = true,
+		Visible = false
+	})
+	ParticleColor2 = SilentAura:CreateColorSlider({
+		Name = 'Color End',
+		Function = function(hue, sat, val)
+			if Particle then
+				Particle.ParticleEmitter.Color = ColorSequence.new({
+					ColorSequenceKeypoint.new(0, Color3.fromHSV(ParticleColor1.Hue, ParticleColor1.Sat, ParticleColor1.Value)),
+					ColorSequenceKeypoint.new(1, Color3.fromHSV(hue, sat, val))
+				})
+			end
+		end,
+		Darker = true,
+		Visible = false
+	})
+	ParticleSize = SilentAura:CreateSlider({
+		Name = 'Size',
+		Min = 0,
+		Max = 1,
+		Default = 0.2,
+		Decimal = 100,
+		Function = function(val)
+			if Particle then
+				Particle.ParticleEmitter.Size = NumberSequence.new(val)
+			end
+		end,
+		Darker = true,
+		Visible = false
+	})
 end)
 
 run(function()
@@ -858,6 +1071,12 @@ run(function()
 		Name = 'Killaura',
 		Function = function(callback)
 			if callback then
+				if not shared.VapeDeveloper then
+					notif('Killaura', 'This module is disabled until safety can be ensured, please use SilentAura.', 30, 'alert')
+					Killaura:Toggle()
+					return
+				end
+	
 				repeat
 					local tool = getAttackData()
 					local attacked = {}
@@ -1900,22 +2119,23 @@ run(function()
 		Name = 'AutoQueue',
 		Function = function(callback)
 			if callback then
-				dumpInput()
-	
 				AutoQueue:Clean(vapeEvents.MatchEnded.Event:Connect(function()
-					if Notification.Enabled and Delay.Value > 0 then
-						notif('AutoQueue', 'Playing again in '..string.format('%.1f', Delay.Value)..' seconds!', Delay.Value)
-					end
-	
-					task.delay(Delay.Value, function()
+					repeat
 						local button = lplr.PlayerGui:FindFirstChild('TR_Menus')
-						button = button and button:FindFirstChild('MatchEnd', true) or nil
-						button = button and button:FindFirstChild('PlayAgain', true) or nil
+						local holder = button and button:FindFirstChild('MatchEnd', true) or nil
+						button = holder and holder:FindFirstChild('PlayAgain', true) or nil
 	
-						if button and button:IsA('TextButton') and realInput then
-							firesignal(button.Activated, realInput, 0)
+						if button and button:IsA('TextButton') and button.Visible and holder.Visible then
+							AutoQueue:Clean(task.delay(Delay.Value, clickButton, button))
+							if Notification.Enabled and Delay.Value > 0 then
+								notif('AutoQueue', 'Playing again in '..string.format('%.1f', Delay.Value)..' seconds!', Delay.Value)
+							end
+	
+							break
 						end
-					end)
+	
+						task.wait(0.05)
+					until not AutoQueue.Enabled
 				end))
 			end
 		end,
@@ -2024,22 +2244,41 @@ end)
 
 run(function()
 	local AutoSkip
+	local RankUp
+	local Drops
+	local Replay
 	
 	AutoSkip = vape.Categories.Inventory:CreateModule({
 		Name = 'AutoSkip',
 		Function = function(callback)
 			if callback then
-				dumpInput()
 				repeat
-					local bind = contextActionService:GetBoundActionInfo('TR_RevealKeys')
-					if bind.priorityLevel == 3050 then
-						local reveal = lplr.PlayerGui:FindFirstChild('TR_Reveal')
-						local button1 = reveal and reveal:FindFirstChild('Skip', true) or nil
-						local button2 = reveal and reveal:FindFirstChild('Continue', true) or nil
+					local bind = contextActionService:GetBoundActionInfo('TR_RankUpKeys')
+					if bind.priorityLevel and RankUp.Enabled then
+						local reveal = lplr.PlayerGui:FindFirstChild('TR_RankUp')
+						local button = reveal and reveal:FindFirstChild('Continue', true) or nil
 	
-						if button1 and button1:IsA('TextButton') and button2 and button2:IsA('TextButton') and realInput then
-							firesignal(button1.Activated, realInput, 0)
-							firesignal(button2.Activated, realInput, 0)
+						if button and button:IsA('TextButton') then
+							clickButton(button)
+						end
+					else
+						local bind2 = contextActionService:GetBoundActionInfo('TR_RevealKeys')
+						if bind2.priorityLevel and Drops.Enabled then
+							local reveal = lplr.PlayerGui:FindFirstChild('TR_Reveal')
+							local button1 = reveal and reveal:FindFirstChild('Skip', true) or nil
+							local button2 = reveal and reveal:FindFirstChild('Continue', true) or nil
+	
+							if button1 and button1:IsA('TextButton') and button2 and button2:IsA('TextButton') then
+								clickButton(button1)
+								clickButton(button2)
+							end
+						elseif Replay.Enabled then
+							local reveal = lplr.PlayerGui:FindFirstChild('TR_ReplayHud')
+							local button = reveal and reveal:FindFirstChild('Skip', true) or nil
+	
+							if button and button:IsA('TextButton') and button.Visible and reveal.Enabled then
+								clickButton(button)
+							end
 						end
 					end
 	
@@ -2047,7 +2286,19 @@ run(function()
 				until not AutoSkip.Enabled
 			end
 		end,
-		Tooltip = 'Automatically skip through all crate popups'
+		Tooltip = 'Automatically skip through all possible popups'
+	})
+	RankUp = AutoSkip:CreateToggle({
+		Name = 'Rank Up',
+		Default = true
+	})
+	Drops = AutoSkip:CreateToggle({
+		Name = 'Crate Drops',
+		Default = true
+	})
+	Replay = AutoSkip:CreateToggle({
+		Name = 'Replay',
+		Default = true
 	})
 end)
 
@@ -2058,8 +2309,6 @@ run(function()
 		Name = 'AutoUpgrade',
 		Function = function(callback)
 			if callback then
-				dumpInput()
-	
 				repeat
 					local gui = lplr.PlayerGui:FindFirstChild('TR_Menus')
 					gui = gui and gui:FindFirstChild('Collection', true) or nil
@@ -2072,8 +2321,8 @@ run(function()
 								if button:IsA('TextButton') then
 									local upgrade = button:FindFirstChild('Upgrade', true)
 	
-									if upgrade and upgrade:IsA('TextButton') and upgrade.Visible and realInput then
-										firesignal(upgrade.Activated, realInput, 0)
+									if upgrade and upgrade:IsA('TextButton') and upgrade.Visible then
+										clickButton(upgrade)
 										break
 									end
 								end
