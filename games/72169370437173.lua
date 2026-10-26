@@ -282,7 +282,7 @@ run(function()
 	end
 end)
 
-for _, v in {'AutoClicker', 'TriggerBot', 'Jesus', 'AutoRejoin', 'Disabler', 'MurderMystery', 'Parkour', 'Wallhop'} do
+for _, v in {'AutoClicker', 'TriggerBot', 'HitBoxes', 'Jesus', 'AutoRejoin', 'Disabler', 'MurderMystery', 'Parkour', 'Wallhop'} do
 	vape:Remove(v)
 end
 
@@ -907,7 +907,7 @@ run(function()
 									local cooldown = handler:Cooldown()
 									local hitDelay = handler.preset.hitDelay or 0.1
 	
-									AttackDelay = os.clock() + cooldown + hitDelay
+									AttackDelay = os.clock() + cooldown
 									for _, data in attacked do
 										table.insert(targets, data.Entity.Character)
 									end
@@ -921,6 +921,7 @@ run(function()
 									local animTable = oneHanded and handler.preset.oneSwings or handler.preset.swings or {}
 									handler.combo = (handler.combo % #comboTable) + 1
 									local finisher = (#comboTable > 2) and (handler.combo == #comboTable)
+									local fakeTime = os.clock() - (hitDelay + (rand:NextNumber() * 0.02) - 0.01)
 									tribes.Util.PlayAnim(handler.ctx.animator, animTable[((handler.combo - 1) % math.max(1, #animTable)) + 1], (handler.preset.swingSpeed or 1) * (finisher and 0.95 or 1), 0.05)
 	
 									handler.ctx.emit('Swing', {
@@ -934,8 +935,8 @@ run(function()
 										dir = sanitizeAngle(CFrame.lookAt(localPos + Vector3.new(0, 1.5, 0), attacked[1].Entity.RootPart.Position)),
 										tool = tool,
 										hits = targets,
-										k = math.floor((hitDelay + (rand:NextNumber() * 0.03)) * 1000),
-										w = math.floor(os.clock() * 1000) % 9973
+										k = math.floor((os.clock() - fakeTime) * 1000),
+										w = math.floor(fakeTime * 1000) % 9973
 									})
 	
 									if AutoBlock.Enabled and handler.tuning.block then
@@ -2028,13 +2029,18 @@ run(function()
 		Name = 'AutoSkip',
 		Function = function(callback)
 			if callback then
+				dumpInput()
 				repeat
 					local bind = contextActionService:GetBoundActionInfo('TR_RevealKeys')
-					if bind.priorityLevel == 3050 and not guiService.MenuIsOpen then
-						--vim:SendKeyEvent(true, Enum.KeyCode.ButtonB, false, nil)
-						--vim:SendKeyEvent(false, Enum.KeyCode.ButtonB, false, nil)
-						--vim:SendKeyEvent(true, Enum.KeyCode.ButtonA, false, nil)
-						--vim:SendKeyEvent(false, Enum.KeyCode.ButtonA, false, nil)
+					if bind.priorityLevel == 3050 then
+						local reveal = lplr.PlayerGui:FindFirstChild('TR_Reveal')
+						local button1 = reveal and reveal:FindFirstChild('Skip', true) or nil
+						local button2 = reveal and reveal:FindFirstChild('Continue', true) or nil
+	
+						if button1 and button1:IsA('TextButton') and button2 and button2:IsA('TextButton') and realInput then
+							firesignal(button1.Activated, realInput, 0)
+							firesignal(button2.Activated, realInput, 0)
+						end
 					end
 	
 					task.wait(0.05)
@@ -2074,12 +2080,6 @@ run(function()
 							end
 						end
 					end
-					--[[if (not isMatch) and (not lplr:GetAttribute('MatchId') or lplr:GetAttribute('MatchId') == '') then
-						local item = tribes.Economy.ReadyList()[1]
-						if item then
-							tribes.Economy.Upgrade(item, 'collection')
-						end
-					end]]
 	
 					task.wait(0.05)
 				until not AutoUpgrade.Enabled

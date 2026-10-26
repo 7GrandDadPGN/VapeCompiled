@@ -3839,7 +3839,7 @@ run(function()
 	end
 	
 	local function Removed(entity)
-		local enty = Reference[entity]
+		local entry = Reference[entity]
 		if entry then
 			if vape.ThreadFix then
 				setthreadidentity(8)
