@@ -275,8 +275,8 @@ run(function()
 
 	local function Hook(...)
 		if setstackhidden then
+			setstackhidden(0, true)
 			setstackhidden(1, true)
-			setstackhidden(2, true)
 		end
 
 		local args = table.pack(...)
@@ -497,8 +497,8 @@ run(function()
 	end
 	
 	local function Hook(...)
+		setstackhidden(0, true)
 		setstackhidden(1, true)
-		setstackhidden(2, true)
 	
 		local handler
 		for _, obj in debug.getstack(3) do
@@ -1624,7 +1624,7 @@ run(function()
 						Icon.Parent = workspace
 	
 						if setstackhidden then
-							setstackhidden(1, true)
+							setstackhidden(0, true)
 							tribes.WeaponIcon(Icon, {id = item, opts = {glow = false, outline = false}})
 						end
 	
