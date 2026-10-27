@@ -779,6 +779,8 @@ run(function()
 			if callback then
 				local old, didSwing
 	
+				if true then return end
+	
 				SilentAura:Clean(runService.PostSimulation:Connect(function()
 					local attacked
 	
