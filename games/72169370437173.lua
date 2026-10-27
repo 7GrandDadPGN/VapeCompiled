@@ -2120,7 +2120,7 @@ run(function()
 		Function = function(callback)
 			if callback then
 				AutoQueue:Clean(vapeEvents.MatchEnded.Event:Connect(function()
-					repeat
+					--[[repeat
 						local button = lplr.PlayerGui:FindFirstChild('TR_Menus')
 						local holder = button and button:FindFirstChild('MatchEnd', true) or nil
 						button = holder and holder:FindFirstChild('PlayAgain', true) or nil
@@ -2135,7 +2135,7 @@ run(function()
 						end
 	
 						task.wait(0.05)
-					until not AutoQueue.Enabled
+					until not AutoQueue.Enabled]]
 				end))
 			end
 		end,
@@ -2252,7 +2252,7 @@ run(function()
 		Name = 'AutoSkip',
 		Function = function(callback)
 			if callback then
-				repeat
+				--[[repeat
 					local bind = contextActionService:GetBoundActionInfo('TR_RankUpKeys')
 					if bind.priorityLevel and RankUp.Enabled then
 						local reveal = lplr.PlayerGui:FindFirstChild('TR_RankUp')
@@ -2283,7 +2283,7 @@ run(function()
 					end
 	
 					task.wait(0.05)
-				until not AutoSkip.Enabled
+				until not AutoSkip.Enabled]]
 			end
 		end,
 		Tooltip = 'Automatically skip through all possible popups'
@@ -2309,7 +2309,7 @@ run(function()
 		Name = 'AutoUpgrade',
 		Function = function(callback)
 			if callback then
-				repeat
+				--[[repeat
 					local gui = lplr.PlayerGui:FindFirstChild('TR_Menus')
 					gui = gui and gui:FindFirstChild('Collection', true) or nil
 	
@@ -2331,7 +2331,7 @@ run(function()
 					end
 	
 					task.wait(0.05)
-				until not AutoUpgrade.Enabled
+				until not AutoUpgrade.Enabled]]
 			end
 		end,
 		Tooltip = 'Automatically upgrade all collectable gear.'
