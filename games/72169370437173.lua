@@ -37,41 +37,58 @@ local tribes = {}
 local HitboxHook = {Hooks = {}}
 local VelocityTracker = {Entries = setmetatable({}, {__mode = 'k'})}
 local isMatch = false
+local isVolt = identifyexecutor and identifyexecutor() == 'Volt' and trampoline_call and true or false
 local clickQueue = {}
 local clickThread = nil
+
+local function canClickButton(target)
+	if (not target.Visible) and (not guiService.MenuIsOpen) then
+		return false
+	end
+
+	local pos = target.AbsolutePosition + target.AbsoluteSize / 2
+	if gethui and gethui():IsA('BasePlayerGui') then
+		for _, obj in gethui():GetGuiObjectsAtPosition(pos.X, pos.Y) do
+			if obj:IsA('GuiButton') then
+				return obj == target
+			end
+		end
+	end
+
+	for _, obj in coreGui:GetGuiObjectsAtPosition(pos.X, pos.Y) do
+		if obj:IsA('GuiButton') then
+			return obj == target
+		end
+	end
+
+	for _, obj in lplr.PlayerGui:GetGuiObjectsAtPosition(pos.X, pos.Y) do
+		if obj:IsA('GuiButton') then
+			return obj == target
+		end
+	end
+
+	return false
+end
 
 local function clickButton(obj)
 	if not (obj and obj:IsA('TextButton')) then
 		return
 	end
 
-	if true then return end
-
 	if not table.find(clickQueue, obj) then
 		table.insert(clickQueue, obj)
 
 		if not clickThread then
-			clickThread = task.spawn(function()
+			task.spawn(function()
+				clickThread = coroutine.running()
+
 				repeat
 					local i, button = next(clickQueue)
 					if i then
-						if button:IsDescendantOf(lplr.PlayerGui) then
-							local cPos = button.AbsolutePosition + guiService:GetGuiInset()
-							local gui = Instance.new('ScreenGui')
-							gui.IgnoreGuiInset = true
-							gui.DisplayOrder = 10000000
-							gui.Parent = vape.gui.Parent
-							local gbutton = Instance.new('TextButton')
-							gbutton.BackgroundTransparency = 1
-							gbutton.Size = UDim2.fromScale(1, 1)
-							gbutton.Text = ''
-							gbutton.Parent = gui
+						table.remove(clickQueue, i)
 
-							for _, event in {'MouseButton1Down', 'InputBegan', 'MouseButton1Up', 'Activated', 'MouseButton1Click', 'InputEnded'} do
-								gbutton[event]:Connect(function(...)
-									firesignal(button[event], ...)
-								end)
-							end
+						if canClickButton(button) then
+							local cPos = (button.AbsolutePosition + button.AbsoluteSize / 2) + guiService:GetGuiInset()
 
 							if inputService.TouchEnabled then
 								vim:SendTouchEvent(0, 0, cPos.X, cPos.Y)
@@ -81,18 +98,13 @@ local function clickButton(obj)
 								vim:SendMouseButtonEvent(cPos.X, cPos.Y, 0, false, gui, 0)
 							end
 
-							gbutton.Activated:Wait()
-							gui:Destroy()
 							task.wait(0.016)
 						end
-
-						table.remove(clickQueue, i)
 					else
+						clickThread = nil
 						break
 					end
 				until false
-
-				clickThread = nil
 			end)
 		end
 	end
@@ -274,10 +286,12 @@ run(function()
 	local oldhitbox
 
 	local function Hook(...)
-		if setstackhidden then
-			local a, b = debug.info(1, 'f'), debug.info(2, 'f')
-			setstackhidden(a, true)
-			setstackhidden(b, true)
+		if setstackhidden and (not isVolt) then -- volt automatically hides the stack with hookfunction
+			local f1, f2 = debug.info(1, 'f'), debug.info(2, 'f')
+			if f1 and f2 and isexecutorclosure(f1) and isexecutorclosure(f2) then
+				setstackhidden(f1, true)
+				setstackhidden(f2, true)
+			end
 		end
 
 		local args = table.pack(...)
@@ -498,9 +512,13 @@ run(function()
 	end
 	
 	local function Hook(...)
-		local a, b = debug.info(1, 'f'), debug.info(2, 'f')
-		setstackhidden(a, true)
-		setstackhidden(b, true)
+		if setstackhidden and (not isVolt) then -- volt automatically hides the stack with hookfunction
+			local f1, f2 = debug.info(1, 'f'), debug.info(2, 'f')
+			if f1 and f2 and isexecutorclosure(f1) and isexecutorclosure(f2) then
+				setstackhidden(f1, true)
+				setstackhidden(f2, true)
+			end
+		end
 	
 		local handler
 		for _, obj in debug.getstack(3) do
@@ -1626,7 +1644,12 @@ run(function()
 						Icon.Parent = workspace
 	
 						if setstackhidden then
-							setstackhidden(debug.info(1, 'f'), true)
+							local f1, f2 = debug.info(1, 'f'), debug.info(2, 'f')
+							if f1 and f2 and isexecutorclosure(f1) and isexecutorclosure(f2) then
+								setstackhidden(f1, true)
+								setstackhidden(f2, true)
+							end
+	
 							tribes.WeaponIcon(Icon, {id = item, opts = {glow = false, outline = false}})
 						end
 	
@@ -2158,7 +2181,7 @@ run(function()
 						local holder = button and button:FindFirstChild('MatchEnd', true) or nil
 						button = holder and holder:FindFirstChild('PlayAgain', true) or nil
 	
-						if button and button:IsA('TextButton') and button.Visible and holder.Visible then
+						if button and button:IsA('TextButton') and button.Visible and holder.Visible and canClickButton(button) then
 							AutoQueue:Clean(task.delay(Delay.Value, clickButton, button))
 							if Notification.Enabled and Delay.Value > 0 then
 								notif('AutoQueue', 'Playing again in '..string.format('%.1f', Delay.Value)..' seconds!', Delay.Value)
@@ -2288,16 +2311,18 @@ run(function()
 				repeat
 					local bind = contextActionService:GetBoundActionInfo('TR_RankUpKeys')
 					if bind.priorityLevel and RankUp.Enabled then
-						local reveal = lplr.PlayerGui:FindFirstChild('TR_RankUp')
-						local button = reveal and reveal:FindFirstChild('Continue', true) or nil
+						local rankupgui = lplr.PlayerGui:FindFirstChild('TR_RankUp')
+						local button = rankupgui and rankupgui:FindFirstChild('Continue', true) or nil
 	
 						if button and button:IsA('TextButton') then
 							clickButton(button)
 						end
 					else
-						local bind2 = contextActionService:GetBoundActionInfo('TR_RevealKeys')
-						if bind2.priorityLevel and Drops.Enabled then
-							local reveal = lplr.PlayerGui:FindFirstChild('TR_Reveal')
+						local reveal = lplr.PlayerGui:FindFirstChild('TR_Reveal')
+						reveal = reveal and reveal.Enabled and reveal:FindFirstChild('Canvas') or nil
+						reveal = reveal and reveal.Visible and reveal:FindFirstChild('Reveal') or nil
+	
+						if Drops.Enabled and reveal and reveal.Visible then
 							local button1 = reveal and reveal:FindFirstChild('Skip', true) or nil
 							local button2 = reveal and reveal:FindFirstChild('Continue', true) or nil
 	
@@ -2306,10 +2331,10 @@ run(function()
 								clickButton(button2)
 							end
 						elseif Replay.Enabled then
-							local reveal = lplr.PlayerGui:FindFirstChild('TR_ReplayHud')
-							local button = reveal and reveal:FindFirstChild('Skip', true) or nil
+							local replayhud = lplr.PlayerGui:FindFirstChild('TR_ReplayHud')
+							local button = replayhud and replayhud:FindFirstChild('Skip', true) or nil
 	
-							if button and button:IsA('TextButton') and button.Visible and reveal.Enabled then
+							if button and button:IsA('TextButton') and button.Visible and replayhud.Enabled then
 								clickButton(button)
 							end
 						end
