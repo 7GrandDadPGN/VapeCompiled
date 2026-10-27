@@ -65,9 +65,11 @@ local function clickButton(obj)
 							gbutton.Text = ''
 							gbutton.Parent = gui
 
-							gbutton.Activated:Connect(function(...)
-								firesignal(button.Activated, ...)
-							end)
+							for _, event in {'MouseButton1Down', 'InputBegan', 'MouseButton1Up', 'Activated', 'MouseButton1Click', 'InputEnded'} do
+								gbutton[event]:Connect(function(...)
+									firesignal(button[event], ...)
+								end)
+							end
 
 							if inputService.TouchEnabled then
 								vim:SendTouchEvent(0, 0, cPos.X, cPos.Y)
@@ -173,9 +175,12 @@ run(function()
 		WeaponRedraw = debug.getupvalue(debug.getupvalue(debug.getupvalue(require(lplr.PlayerScripts.UI.WeaponIcon).Init, 5), 3), 8)
 	}
 
+	local cIndex = debug.getupvalue(tribes.CombatController.Equip, 11)
+	cIndex = type(cIndex) == 'function' and debug.info(cIndex, 'n') == 'refreshEquipped' and 11 or 12
+
 	tribes.State = debug.getupvalue(tribes.CombatController.State, 2)
-	tribes.Handlers = debug.getupvalue(debug.getupvalue(tribes.CombatController.Equip, 11), 10)
-	tribes.SetSpeed = debug.getupvalue(debug.getupvalue(tribes.CombatController.Equip, 11), 15)
+	tribes.Handlers = debug.getupvalue(debug.getupvalue(tribes.CombatController.Equip, cIndex), 10)
+	tribes.SetSpeed = debug.getupvalue(debug.getupvalue(tribes.CombatController.Equip, cIndex), 15)
 
 	local kills = sessioninfo:AddItem('Kills')
 	local deaths = sessioninfo:AddItem('Deaths')
@@ -267,6 +272,11 @@ run(function()
 	local oldhitbox
 
 	local function Hook(...)
+		if setstackhidden then
+			setstackhidden(1, true)
+			setstackhidden(2, true)
+		end
+
 		local args = table.pack(...)
 		for _, v in HitboxHook.Hooks do
 			if v[2](args) then return end
@@ -367,6 +377,13 @@ run(function()
 							if angle >= (math.rad(AngleSlider.Value) / 2) then return end
 							targetinfo.Targets[entity] = os.clock() + 1
 							local lerped = gameCamera.CFrame:Lerp(CFrame.lookAt(gameCamera.CFrame.Position, entity.RootPart.Position), (AimSpeed.Value + (StrafeIncrease.Enabled and (inputService:IsKeyDown(Enum.KeyCode.A) or inputService:IsKeyDown(Enum.KeyCode.D)) and 10 or 0)) * dt).LookVector
+	
+							debug.setupvalue(tribes.Camera.SetLook, 2, ((math.atan2(-lerped.X, -lerped.Z) + math.pi) % math.tau) - math.pi)
+							if Vertical.Enabled then
+								debug.setupvalue(tribes.Camera.SetLook, 3, math.clamp(math.asin(lerped.Y), -1.3962634015954636, 1.361356816555577))
+							end
+	
+							debug.setupvalue(tribes.Camera.SetLook, 4, debug.getupvalue(tribes.Camera.SetLook, 5))
 							--tribes.Camera.SetLook(math.atan2(-lerped.X, -lerped.Z), Vertical.Enabled and math.asin(lerped.Y) or nil)
 						end
 					end
@@ -478,8 +495,10 @@ run(function()
 	end
 	
 	local function Hook(...)
-		local handler
+		setstackhidden(1, true)
+		setstackhidden(2, true)
 	
+		local handler
 		for _, obj in debug.getstack(3) do
 			if type(obj) == 'table' and rawget(obj, 'tuning') then
 				handler = obj
@@ -569,9 +588,15 @@ run(function()
 			end
 	
 			if callback then
-				--[[old = hookfunction(tribes.Util.AimDirection, function(...)
+				if not setstackhidden then
+					notif('SilentAim', 'setstackhidden only currently.', 10, 'alert')
+					SilentAim:Toggle()
+					return
+				end
+	
+				old = hookfunction(tribes.Util.AimDirection, function(...)
 					return Hook(...)
-				end)]]
+				end)
 	
 				repeat
 					if CircleObject then
@@ -1596,7 +1621,11 @@ run(function()
 						Icon.Size = UDim2.fromOffset(30, 30)
 						Icon.Parent = workspace
 	
-						--tribes.WeaponIcon(Icon, {id = item, opts = {glow = false, outline = false}})
+						if setstackhidden then
+							setstackhidden(1, true)
+							tribes.WeaponIcon(Icon, {id = item, opts = {glow = false, outline = false}})
+						end
+	
 						task.defer(function()
 							Icon.Parent = holder
 						end)
@@ -2126,7 +2155,7 @@ run(function()
 						button = holder and holder:FindFirstChild('PlayAgain', true) or nil
 	
 						if button and button:IsA('TextButton') and button.Visible and holder.Visible then
-							--AutoQueue:Clean(task.delay(Delay.Value, clickButton, button))
+							AutoQueue:Clean(task.delay(Delay.Value, clickButton, button))
 							if Notification.Enabled and Delay.Value > 0 then
 								notif('AutoQueue', 'Playing again in '..string.format('%.1f', Delay.Value)..' seconds!', Delay.Value)
 							end
@@ -2259,7 +2288,7 @@ run(function()
 						local button = reveal and reveal:FindFirstChild('Continue', true) or nil
 	
 						if button and button:IsA('TextButton') then
-							--clickButton(button)
+							clickButton(button)
 						end
 					else
 						local bind2 = contextActionService:GetBoundActionInfo('TR_RevealKeys')
@@ -2269,15 +2298,15 @@ run(function()
 							local button2 = reveal and reveal:FindFirstChild('Continue', true) or nil
 	
 							if button1 and button1:IsA('TextButton') and button2 and button2:IsA('TextButton') then
-								--clickButton(button1)
-								--clickButton(button2)
+								clickButton(button1)
+								clickButton(button2)
 							end
 						elseif Replay.Enabled then
 							local reveal = lplr.PlayerGui:FindFirstChild('TR_ReplayHud')
 							local button = reveal and reveal:FindFirstChild('Skip', true) or nil
 	
 							if button and button:IsA('TextButton') and button.Visible and reveal.Enabled then
-								--clickButton(button)
+								clickButton(button)
 							end
 						end
 					end
@@ -2322,7 +2351,7 @@ run(function()
 									local upgrade = button:FindFirstChild('Upgrade', true)
 	
 									if upgrade and upgrade:IsA('TextButton') and upgrade.Visible then
-										--clickButton(upgrade)
+										clickButton(upgrade)
 										break
 									end
 								end
