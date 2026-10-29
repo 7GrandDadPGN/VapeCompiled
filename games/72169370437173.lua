@@ -37,7 +37,6 @@ local tribes = {}
 local HitboxHook = {Hooks = {}}
 local VelocityTracker = {Entries = setmetatable({}, {__mode = 'k'})}
 local isMatch = false
-local isVolt = false--identifyexecutor and identifyexecutor() == 'Volt' and trampoline_call and true or false
 local clickQueue = {}
 local clickThread = nil
 
@@ -219,13 +218,21 @@ run(function()
 
 		return 'None'
 	end, false)
-	isMatch = not workspace:FindFirstChild('Lobby')
 
-	if isMatch then
-		task.delay(1, function()
-			games:Increment()
-		end)
+	local lobbyObj = workspace:FindFirstChild('Lobby')
+	if lobbyObj then
+		vape:Clean(lobbyObj.Destroying:Once(function()
+			isMatch = true
+		end))
+	else
+		isMatch = true
 	end
+
+	vape:Clean(task.delay(1, function()
+		if isMatch then
+			games:Increment()
+		end
+	end))
 
 	vape:Clean(replicatedStorage.Remotes.HitConfirm.OnClientEvent:Connect(function(data)
 		if data and data.killed and isMatch then
@@ -286,7 +293,7 @@ run(function()
 	local oldhitbox
 
 	local function Hook(...)
-		if setstackhidden and (not isVolt) then -- volt automatically hides the stack with hookfunction
+		if setstackhidden then
 			local ffunctions = {debug.info(1, 'f'), debug.info(2, 'f'), debug.info(3, 'f'), debug.info(4, 'f'), debug.info(5, 'f')}
 			for _, func in ffunctions do
 				if isexecutorclosure(func) then
@@ -472,8 +479,8 @@ run(function()
 	Value = Reach:CreateSlider({
 		Name = 'Range',
 		Min = 0,
-		Max = 4,
-		Default = 4,
+		Max = 3,
+		Default = 3,
 		Suffix = function(val)
 			return val == 1 and 'stud' or 'studs'
 		end
@@ -515,7 +522,7 @@ run(function()
 	end
 	
 	local function Hook(...)
-		if setstackhidden and (not isVolt) then -- volt automatically hides the stack with hookfunction
+		if setstackhidden then
 			local ffunctions = {debug.info(1, 'f'), debug.info(2, 'f'), debug.info(3, 'f'), debug.info(4, 'f'), debug.info(5, 'f')}
 			for _, func in ffunctions do
 				if isexecutorclosure(func) then
@@ -771,6 +778,7 @@ run(function()
 	local AttackRange
 	local AngleSlider
 	local AutoSwing
+	local VerticalReach
 	local AutoBlock
 	local BoxAttackColor
 	local ParticleTexture
@@ -784,11 +792,11 @@ run(function()
 		Name = 'SilentAura',
 		Function = function(callback)
 			if callback then
-				local old, didSwing
+				local didSwing
 	
 				SilentAura:Clean(runService.PostSimulation:Connect(function()
 					gamingThread = task.defer(function()
-						local attacked
+						local attacked, old, oldpos
 	
 						if entitylib.isAlive and tribes.State.handler and tribes.State.handler.lastSwing then
 							local localPos = entitylib.character.RootPart.Position
@@ -809,7 +817,7 @@ run(function()
 									local yaw = select(2, gameCamera.CFrame:ToEulerAnglesYXZ())
 									local angle = math.abs(CFrame.fromEulerAnglesYXZ(0, yaw, 0).LookVector:Angle(delta * Vector3.new(1, 0, 1)))
 	
-									if angle > (math.rad(AngleSlider.Value) / 2) or delta.Y >= 8 then
+									if angle > (math.rad(AngleSlider.Value) / 2) or (not VerticalReach.Enabled and math.abs(delta.Y) >= 8) then
 										continue
 									end
 	
@@ -833,6 +841,11 @@ run(function()
 									gameCamera.CFrame = CFrame.lookAlong(old.Position, CFrame.lookAt(localPos, cmpPos).LookVector)
 									if angle > math.rad(100) then
 										entitylib.character.RootPart.CFrame = CFrame.lookAlong(localPos, delta * Vector3.new(1, 0, 1))
+									end
+	
+									if VerticalReach.Enabled then
+										oldpos = entitylib.character.RootPart.CFrame
+										entitylib.character.RootPart.CFrame = CFrame.new(cmpPos)
 									end
 	
 									break
@@ -879,15 +892,20 @@ run(function()
 							Particle.Parent = attacked and gameCamera or nil
 						end
 	
+						task.wait()
+	
+						if old then
+							gameCamera.CFrame = old
+							old = nil
+						end
+	
+						if oldpos then
+							entitylib.character.RootPart.CFrame = oldpos
+							oldpos = nil
+						end
+	
 						gamingThread = nil
 					end)
-				end))
-	
-				SilentAura:Clean(runService.Heartbeat:Connect(function()
-					if old then
-						gameCamera.CFrame = old
-						old = nil
-					end
 				end))
 			else
 				if gamingThread then
@@ -927,6 +945,9 @@ run(function()
 	})
 	AutoSwing = SilentAura:CreateToggle({
 		Name = 'Auto swing'
+	})
+	VerticalReach = SilentAura:CreateToggle({
+		Name = 'Vertical reach'
 	})
 	--[[AutoBlock = SilentAura:CreateToggle({
 		Name = 'AutoBlock'
@@ -1540,6 +1561,32 @@ run(function()
 	})
 	ZToggle = SpinBot:CreateToggle({
 		Name = 'Spin Z'
+	})
+end)
+
+run(function()
+	local SwingSpeed
+	
+	SwingSpeed = vape.Categories.Blatant:CreateModule({
+		Name = 'SwingSpeed',
+		Function = function(callback)
+			if callback then
+				local old
+				repeat
+					if tribes.State.handler and tribes.State.handler.lastSwing then
+						if tribes.State.handler.lastSwing ~= old then
+							rawset(tribes.State.handler, 'lastSwing', tribes.State.handler.lastSwing - (tribes.State.handler.preset.hitDelay or 0.1))
+							old = tribes.State.handler.lastSwing
+						end
+					else
+						old = nil
+					end
+	
+					task.wait()
+				until not SwingSpeed.Enabled
+			end
+		end,
+		Tooltip = 'Reduce swing cooldown by the max hit delay'
 	})
 end)
 
