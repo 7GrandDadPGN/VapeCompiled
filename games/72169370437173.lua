@@ -1209,11 +1209,12 @@ run(function()
 		Name = 'NoSlowdown',
 		Function = function(callback)
 			if callback then
-				old = hookfunction(tribes.SetSpeed, function(...)
+				old = hookfunction(tribes.SetSpeed, newcclosure(function(...)
+					hideStack()
 					if not argCheck({{'string'}, {'number', 'nil'}}, ...) then
 						return old(...)
 					end
-				end)
+				end))
 	
 				table.clear(rawget(tribes.State, 'speed') or {})
 			else
