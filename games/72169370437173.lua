@@ -206,7 +206,7 @@ run(function()
 	local cIndex = debug.getupvalue(rawget(tribes.CombatController, 'Equip'), 11)
 	cIndex = type(cIndex) == 'function' and debug.info(cIndex, 'n') == 'refreshEquipped' and 11 or 12
 
-	tribes.State = debug.getupvalue(rawget(tribes.CombatController, 'State'), 5)
+	tribes.State = debug.getupvalue(rawget(tribes.CombatController, 'State'), 6)
 	tribes.Handlers = debug.getupvalue(debug.getupvalue(rawget(tribes.CombatController, 'Equip'), cIndex), 10)
 	tribes.SetSpeed = debug.getupvalue(debug.getupvalue(rawget(tribes.CombatController, 'Equip'), cIndex), 15)
 
@@ -402,7 +402,6 @@ run(function()
 		Name = 'AimAssist',
 		Function = function(callback)
 			if callback then
-				if true then return end
 				AimAssist:Clean(runService.Heartbeat:Connect(function(dt)
 					local lastSwing = entitylib.isAlive and rawget(tribes.State, 'handler')
 					lastSwing = lastSwing and rawget(lastSwing, 'lastSwing') or nil
@@ -425,9 +424,9 @@ run(function()
 							local lerped = gameCamera.CFrame:Lerp(CFrame.lookAt(gameCamera.CFrame.Position, entity.RootPart.Position), (AimSpeed.Value + (StrafeIncrease.Enabled and (inputService:IsKeyDown(Enum.KeyCode.A) or inputService:IsKeyDown(Enum.KeyCode.D)) and 10 or 0)) * dt).LookVector
 							local setLook = rawget(tribes.Camera, 'SetLook')
 	
-							debug.setupvalue(setLook, 8, ((math.atan2(-lerped.X, -lerped.Z) + math.pi) % math.tau) - math.pi)
+							debug.setupvalue(setLook, 10, ((math.atan2(-lerped.X, -lerped.Z) + math.pi) % math.tau) - math.pi)
 							if Vertical.Enabled then
-								debug.setupvalue(setLook, 9, math.clamp(math.asin(lerped.Y), -1.3962634015954636, 1.361356816555577))
+								debug.setupvalue(setLook, 11, math.clamp(math.asin(lerped.Y), -1.3962634015954636, 1.361356816555577))
 							end
 	
 							debug.setupvalue(setLook, 4, debug.getupvalue(setLook, 5))
