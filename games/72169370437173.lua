@@ -485,10 +485,10 @@ run(function()
 		Name = 'Reach',
 		Function = function(callback)
 			if callback then
-				HitboxHook:Add('Reach', function(args)
+				--[[HitboxHook:Add('Reach', function(args)
 					args[2] += Value.Value
 					args[3] = math.min(args[3] + Arc.Value, 90)
-				end)
+				end)]]
 			else
 				HitboxHook:Remove('Reach')
 			end
@@ -649,6 +649,8 @@ run(function()
 					SilentAim:Toggle()
 					return
 				end
+	
+				if true then return end
 	
 				old = hookfunction(rawget(tribes.Util, 'AimDirection'), function(...)
 					return Hook(...)
@@ -1145,6 +1147,7 @@ run(function()
 	vape.Categories.Blatant:CreateModule({
 		Name = 'NoRecoil',
 		Function = function(callback)
+			if true then return end
 			if callback then
 				old = hookfunction(rawget(tribes.Util, 'Recoil'), function() end)
 				oldshake = hookfunction(rawget(tribes.Util, 'Shake'), function() end)
@@ -1174,6 +1177,7 @@ run(function()
 	vape.Categories.Blatant:CreateModule({
 		Name = 'NoSlowdown',
 		Function = function(callback)
+			if true then return end
 			if callback then
 				old = hookfunction(tribes.SetSpeed, function() end)
 				table.clear(rawget(tribes.State, 'speed') or {})
@@ -1258,6 +1262,7 @@ run(function()
 		Name = 'SwingSpeed',
 		Function = function(callback)
 			if callback then
+				if true then return end
 				local old
 				repeat
 					local handler = rawget(tribes.State, 'handler')
