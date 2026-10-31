@@ -515,12 +515,12 @@ run(function()
 		Name = 'Reach',
 		Function = function(callback)
 			if callback then
-				HitboxHook:Add('Reach', function(args)
+				--[[HitboxHook:Add('Reach', function(args)
 					args[2] += Value.Value
 					args[3] = math.min(args[3] + Arc.Value, 90)
-				end)
+				end)]]
 			else
-				HitboxHook:Remove('Reach')
+				--HitboxHook:Remove('Reach')
 			end
 		end,
 		Tooltip = 'Extends attack reach'
@@ -691,6 +691,7 @@ run(function()
 					return
 				end
 	
+				if true then return end
 				old = hookfunction(rawget(tribes.Util, 'AimDirection'), function(...)
 					return Hook(...)
 				end)
@@ -1372,6 +1373,7 @@ run(function()
 		Name = 'SwingSpeed',
 		Function = function(callback)
 			if callback then
+				if true then return end
 				old = hookfunction(rawget(tribes.Melee, 'OneHanded'), function(...)
 					return Hook(...)
 				end)
