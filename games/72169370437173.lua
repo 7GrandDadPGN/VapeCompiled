@@ -1259,6 +1259,11 @@ run(function()
 		if not (argCheck({{'string'}, {'number', 'nil'}}, ...) and valid[s] and table.find(valid[s], n)) then
 			return old(...)
 		end
+	
+		local speed = select(2, ...)
+		if speed == nil or speed >= 1 then
+			return old(...)
+		end
 	end
 	
 	vape.Categories.Blatant:CreateModule({
