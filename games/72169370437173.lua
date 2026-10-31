@@ -233,7 +233,7 @@ run(function()
 	local cIndex = debug.getupvalue(rawget(tribes.CombatController, 'Equip'), 11)
 	cIndex = type(cIndex) == 'function' and debug.info(cIndex, 'n') == 'refreshEquipped' and 11 or 12
 
-	tribes.State = debug.getupvalue(rawget(tribes.CombatController, 'State'), 8)
+	tribes.State = debug.getupvalue(rawget(tribes.CombatController, 'State'), 10)
 	tribes.Handlers = debug.getupvalue(debug.getupvalue(rawget(tribes.CombatController, 'Equip'), cIndex), 10)
 	tribes.SetSpeed = debug.getupvalue(debug.getupvalue(rawget(tribes.CombatController, 'Equip'), cIndex), 15)
 
@@ -446,9 +446,9 @@ run(function()
 							local lerped = gameCamera.CFrame:Lerp(CFrame.lookAt(gameCamera.CFrame.Position, entity.RootPart.Position), (AimSpeed.Value + (StrafeIncrease.Enabled and (inputService:IsKeyDown(Enum.KeyCode.A) or inputService:IsKeyDown(Enum.KeyCode.D)) and 10 or 0)) * dt).LookVector
 							local setLook = rawget(tribes.Camera, 'SetLook')
 	
-							debug.setupvalue(setLook, 14, ((math.atan2(-lerped.X, -lerped.Z) + math.pi) % math.tau) - math.pi)
+							debug.setupvalue(setLook, 16, ((math.atan2(-lerped.X, -lerped.Z) + math.pi) % math.tau) - math.pi)
 							if Vertical.Enabled then
-								debug.setupvalue(setLook, 15, math.clamp(math.asin(lerped.Y), -1.3962634015954636, 1.361356816555577))
+								debug.setupvalue(setLook, 17, math.clamp(math.asin(lerped.Y), -1.3962634015954636, 1.361356816555577))
 							end
 	
 							debug.setupvalue(setLook, 4, debug.getupvalue(setLook, 5))
@@ -507,10 +507,10 @@ run(function()
 		Name = 'Reach',
 		Function = function(callback)
 			if callback then
-				HitboxHook:Add('Reach', function(args)
+				--[[HitboxHook:Add('Reach', function(args)
 					args[2] += Value.Value
 					args[3] = math.min(args[3] + Arc.Value, 90)
-				end)
+				end)]]
 			else
 				HitboxHook:Remove('Reach')
 			end
@@ -666,6 +666,8 @@ run(function()
 					SilentAim:Toggle()
 					return
 				end
+	
+				if true then return end
 	
 				old = hookfunction(rawget(tribes.Util, 'AimDirection'), function(...)
 					return Hook(...)
@@ -1163,6 +1165,7 @@ run(function()
 		Name = 'NoRecoil',
 		Function = function(callback)
 			if callback then
+				if true then return end
 				old = hookfunction(rawget(tribes.Util, 'Recoil'), newcclosure(function(...)
 					hideStack()
 					if not argCheck({{'number'}, {'number', 'nil'}, {'number', 'nil'}}, ...) then
@@ -1209,6 +1212,7 @@ run(function()
 		Name = 'NoSlowdown',
 		Function = function(callback)
 			if callback then
+				if true then return end
 				old = hookfunction(tribes.SetSpeed, newcclosure(function(...)
 					hideStack()
 					if not argCheck({{'string'}, {'number', 'nil'}}, ...) then
