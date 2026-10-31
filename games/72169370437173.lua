@@ -1271,6 +1271,7 @@ run(function()
 		Name = 'NoSlowdown',
 		Function = function(callback)
 			if callback then
+				if true then return end
 				old = hookfunction(tribes.SetSpeed, function(...)
 					return Hook(...)
 				end)
