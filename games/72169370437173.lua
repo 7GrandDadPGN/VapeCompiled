@@ -333,11 +333,17 @@ end)
 
 run(function()
 	local oldhitbox
+	local cmp = lplr.PlayerScripts.Combat.Handlers.Melee:GetFullName()
 
 	local function Hook(...)
 		hideStack()
 
-		if not argCheck({{'table'}, {'number'}, {'number'}, {'number'}}, ...) then
+		if not debug.validlevel(2) then
+			local n, s = debug.info(1, 'ns')
+			if not (argCheck({{'table'}, {'number'}, {'number'}, {'number'}}, ...) and n == '' and s == cmp) then
+				return oldhitbox(...)
+			end
+		else
 			return oldhitbox(...)
 		end
 
@@ -419,12 +425,16 @@ run(function()
 	local StrafeIncrease
 	local Vertical
 	local ClickAim
+	local moveConst = Vector2.new(1, 0.77) * math.rad(0.5)
+	
+	local function wrapAngle(num)
+		return (num + math.pi % math.tau) - math.pi
+	end
 	
 	AimAssist = vape.Categories.Combat:CreateModule({
 		Name = 'AimAssist',
 		Function = function(callback)
 			if callback then
-				if true then return end
 				AimAssist:Clean(runService.Heartbeat:Connect(function(dt)
 					local lastSwing = entitylib.isAlive and rawget(tribes.State, 'handler')
 					lastSwing = lastSwing and rawget(lastSwing, 'lastSwing') or nil
@@ -438,22 +448,19 @@ run(function()
 							NPCs = Targets.NPCs.Enabled
 						})
 	
-						if entity then
+						if entity and inputService.MouseBehavior == Enum.MouseBehavior.LockCenter and not (guiService.MenuIsOpen or vape.gui.ScaledGui.ClickGui.Visible) then
 							local delta = (entity.RootPart.Position - entitylib.character.RootPart.Position)
 							local localfacing = entitylib.character.RootPart.CFrame.LookVector * Vector3.new(1, 0, 1)
 							local angle = math.acos(localfacing:Dot((delta * Vector3.new(1, 0, 1)).Unit))
 							if angle >= (math.rad(AngleSlider.Value) / 2) then return end
 							targetinfo.Targets[entity] = os.clock() + 1
+	
+							local facing = gameCamera.CFrame.LookVector
 							local lerped = gameCamera.CFrame:Lerp(CFrame.lookAt(gameCamera.CFrame.Position, entity.RootPart.Position), (AimSpeed.Value + (StrafeIncrease.Enabled and (inputService:IsKeyDown(Enum.KeyCode.A) or inputService:IsKeyDown(Enum.KeyCode.D)) and 10 or 0)) * dt).LookVector
-							local setLook = rawget(tribes.Camera, 'SetLook')
-	
-							debug.setupvalue(setLook, 18, ((math.atan2(-lerped.X, -lerped.Z) + math.pi) % math.tau) - math.pi)
-							if Vertical.Enabled then
-								debug.setupvalue(setLook, 19, math.clamp(math.asin(lerped.Y), -1.3962634015954636, 1.361356816555577))
-							end
-	
-							debug.setupvalue(setLook, 4, debug.getupvalue(setLook, 5))
-							--tribes.Camera.SetLook(math.atan2(-lerped.X, -lerped.Z), Vertical.Enabled and math.asin(lerped.Y) or nil)
+							local diffYaw = wrapAngle(math.atan2(facing.X, facing.Z) - math.atan2(lerped.X, lerped.Z))
+							local diffPitch = math.asin(facing.Y) - math.asin(lerped.Y)
+							local angle = Vector2.new(diffYaw, diffPitch) // (moveConst * UserSettings():GetService('UserGameSettings').MouseSensitivity)
+							vim:SendMouseMoveDeltaEvent(angle.X, Vertical.Enabled and angle.Y or 0, nil)
 						end
 					end
 				end))
@@ -508,10 +515,10 @@ run(function()
 		Name = 'Reach',
 		Function = function(callback)
 			if callback then
-				--[[HitboxHook:Add('Reach', function(args)
+				HitboxHook:Add('Reach', function(args)
 					args[2] += Value.Value
 					args[3] = math.min(args[3] + Arc.Value, 90)
-				end)]]
+				end)
 			else
 				HitboxHook:Remove('Reach')
 			end
@@ -555,6 +562,21 @@ run(function()
 	local Toggles = {}
 	local old
 	
+	local valid = {
+		[lplr.PlayerScripts.Combat.Handlers.Bow:GetFullName()] = {
+			'Fire'
+		},
+		[lplr.PlayerScripts.Combat.Handlers.Gun:GetFullName()] = {
+			'Fire'
+		},
+		[lplr.PlayerScripts.Combat.Handlers.Melee:GetFullName()] = {
+			'Hurl'
+		},
+		[lplr.PlayerScripts.Combat.Handlers.Throw:GetFullName()] = {
+			'Launch'
+		}
+	}
+	
 	local function getMousePosition()
 		if inputService.TouchEnabled then
 			return gameCamera.ViewportSize / 2
@@ -566,7 +588,8 @@ run(function()
 	local function Hook(...)
 		hideStack()
 	
-		if not argCheck({{'Vector3', 'nil'}}, ...) then
+		local n, s = debug.info(1, 'ns')
+		if not (argCheck({{'Vector3', 'nil'}}, ...) and valid[s] and table.find(valid[s], n)) then
 			return old(...)
 		end
 	
@@ -667,8 +690,6 @@ run(function()
 					SilentAim:Toggle()
 					return
 				end
-	
-				if true then return end
 	
 				old = hookfunction(rawget(tribes.Util, 'AimDirection'), function(...)
 					return Hook(...)
@@ -1209,22 +1230,48 @@ run(function()
 end)
 
 run(function()
+	local old
+	local valid = {
+		[lplr.PlayerScripts.Combat.Handlers.Bow:GetFullName()] = {
+			'StartDraw',
+			'Input'
+		},
+		[lplr.PlayerScripts.Combat.Handlers.Gun:GetFullName()] = {
+			'LocalReload'
+		},
+		[lplr.PlayerScripts.Combat.Handlers.Melee:GetFullName()] = {
+			'SetBlock',
+			'StartCharge',
+			'RaiseParry'
+		},
+		[lplr.PlayerScripts.Combat.Handlers.Throw:GetFullName()] = {
+			'Start',
+			'Input'
+		},
+		[lplr.PlayerScripts.Combat.Handlers.Use:GetFullName()] = {
+			'Activate'
+		}
+	}
+	
+	local function Hook(...)
+		hideStack()
+		local n, s = debug.info(1, 'ns')
+		if not (argCheck({{'string'}, {'number', 'nil'}}, ...) and valid[s] and table.find(valid[s], n)) then
+			return old(...)
+		end
+	end
+	
 	vape.Categories.Blatant:CreateModule({
 		Name = 'NoSlowdown',
 		Function = function(callback)
 			if callback then
-				if true then return end
-				old = hookfunction(tribes.SetSpeed, newcclosure(function(...)
-					hideStack()
-					if not argCheck({{'string'}, {'number', 'nil'}}, ...) then
-						return old(...)
-					end
-				end))
-	
-				table.clear(rawget(tribes.State, 'speed') or {})
+				old = hookfunction(tribes.SetSpeed, function(...)
+					return Hook(...)
+				end)
 			else
 				if old then
 					restorefunction(tribes.SetSpeed)
+					old = nil
 				end
 			end
 		end,
@@ -1297,27 +1344,37 @@ run(function()
 end)
 
 run(function()
-	local SwingSpeed
+	local old
+	local cmp = lplr.PlayerScripts.Combat.Handlers.Melee:GetFullName()
+	
+	local function Hook(...)
+		hideStack()
+		local n, s = debug.info(2, 'ns')
+		if not (argCheck({{'table'}}, ...) and n == 'Swing' and s == cmp) then
+			return old(...)
+		end
+	
+		local self = ...
+		if getrawmetatable(self) == tribes.Melee and type(rawget(self, 'lastSwing')) == 'number' then
+			task.defer(function()
+				local cooldown = safeget(self, 'preset', 'hitDelay')
+				rawset(self, 'lastSwing', rawget(self, 'lastSwing') - (type(cooldown) == 'number' and cooldown or 0.1))
+			end)
+		end
+	end
 	
 	SwingSpeed = vape.Categories.Blatant:CreateModule({
 		Name = 'SwingSpeed',
 		Function = function(callback)
 			if callback then
-				if true then return end
-				local old
-				repeat
-					local handler = rawget(tribes.State, 'handler')
-					if handler and rawget(handler, 'lastSwing') then
-						if rawget(handler, 'lastSwing') ~= old then
-							rawset(handler, 'lastSwing', rawget(handler, 'lastSwing') - (safeget(handler, 'preset', 'hitDelay') or 0.1))
-							old = rawget(handler, 'lastSwing')
-						end
-					else
-						old = nil
-					end
-	
-					task.wait()
-				until not SwingSpeed.Enabled
+				old = hookfunction(rawget(tribes.Melee, 'OneHanded'), function(...)
+					return Hook(...)
+				end)
+			else
+				if old then
+					restorefunction(rawget(tribes.Melee, 'OneHanded'))
+					old = nil
+				end
 			end
 		end,
 		Tooltip = 'Reduce swing cooldown by the max hit delay'
