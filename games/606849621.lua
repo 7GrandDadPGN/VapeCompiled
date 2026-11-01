@@ -69,14 +69,14 @@ local function getTableSize(dict)
 	return size
 end
 
-local function getVehicle(entity)
+local function getVehicleSeat(entity)
 	if entity.Player then
 		for _, car in collectionService:GetTagged('Vehicle') do
 			for _, seat in car:GetChildren() do
 				if (seat.Name == 'Seat' or seat.Name == 'Passenger') then
-					seat = seat:FindFirstChild('PlayerName')
-					if seat and seat.Value == entity.Player.Name then
-						return car
+					local pname = seat:FindFirstChild('PlayerName')
+					if pname and pname.Value == entity.Player.Name then
+						return seat
 					end
 				end
 			end
@@ -819,10 +819,6 @@ run(function()
 
 	vape:Clean(entitylib.Events.EntityUpdated:Connect(function(entity)
 		local isInVehicle = entity.Character:GetAttribute('InVehicle')
-		if entity.VehicleState ~= isInVehicle and not isInVehicle then
-			entity.VehicleTimer = os.clock() + 0.3
-		end
-
 		entity.VehicleState = isInVehicle
 		entity.InVehicle = not entity.Character:GetAttribute('HasHandcuffs') and (isInVehicle or entity.InVehicle)
 		entity.Illegal = isIllegal(entity, true)
@@ -833,6 +829,18 @@ run(function()
 	end))
 
 	vape:Clean(entitylib.Events.LocalAdded:Connect(updateVelocity))
+
+	vape:Clean(task.spawn(function()
+		repeat
+			for _, entity in entitylib.List do
+				if entity.Character:GetAttribute('InVehicle') then
+					entity.VehicleTimer = os.clock() + 0.5
+				end
+			end
+
+			task.wait(0.05)
+		until false
+	end))
 
 	vape:Clean(function()
 		table.clear(remotes)
@@ -1256,14 +1264,14 @@ run(function()
 						end
 	
 						if target then
-							local doAction = not savetime or (os.clock() - savetime) > 0.5
+							local doAction = savetime and (os.clock() - savetime) > 0.5
 							local lastEquipped = jb.ItemSystemController:GetLocalEquipped()
 							if AutoEquip.Enabled and not (lastEquipped and lastEquipped.__ClassName == 'Handcuffs') and doAction then
 								equipTool(cuffs)
 							end
 	
 							local equipped = jb.ItemSystemController:GetLocalEquipped()
-							if equipped and equipped.__ClassName == 'Handcuffs' then
+							if equipped and equipped.__ClassName == 'Handcuffs' or not savetime then
 								if savetime then
 									if doAction then
 										jb:FireServer('ArrestEnd', randkey)
@@ -1308,8 +1316,15 @@ end)
 run(function()
 	local AutoEject
 	local Range
-	local Hand
+	local AutoEquip
 	local cooldown = 0
+	
+	local function equipTool(tool)
+		local obj = jb.InventoryItemBinder:Get(tool)
+		if obj then
+			obj:AttemptSelect()
+		end
+	end
 	
 	AutoEject = vape.Categories.Blatant:CreateModule({
 		Name = 'AutoEject',
@@ -1321,9 +1336,9 @@ run(function()
 					if entitylib.isAlive and lplr.Team == teams.Police and cuffs then
 						local equipped = jb.ItemSystemController:GetLocalEquipped()
 	
-						if not Hand.Enabled or equipped and equipped.__ClassName == 'Handcuffs' then
+						if AutoEquip.Enabled or equipped and equipped.__ClassName == 'Handcuffs' then
 							local serverPos = entitylib.character.Humanoid:FindFirstChild('HumanoidUnloadServerPosition')
-							local vehicle
+							local seat
 	
 							local entities = entitylib.AllPosition({
 								Players = true,
@@ -1335,16 +1350,28 @@ run(function()
 							for _, entity in entities do
 								if entity.Player and isIllegal(entity) then
 									if entity.Character:GetAttribute('InVehicle') then
-										if not vehicle and cooldown < os.clock() then
-											vehicle = getVehicle(entity)
+										if not seat and cooldown < os.clock() then
+											seat = getVehicleSeat(entity)
 										end
 									end
 								end
 							end
 	
-							if vehicle then
-								jb:FireServer('Eject', vehicle)
-								cooldown = os.clock() + 0.5
+							if seat then
+								local lastEquipped = jb.ItemSystemController:GetLocalEquipped()
+								if AutoEquip.Enabled and not (lastEquipped and lastEquipped.__ClassName == 'Handcuffs') then
+									equipTool(cuffs)
+								end
+	
+								equipped = jb.ItemSystemController:GetLocalEquipped()
+								if equipped and equipped.__ClassName == 'Handcuffs' then
+									jb:FireServer('Eject', seat)
+									cooldown = os.clock() + 0.5
+								end
+	
+								if AutoEquip.Enabled and lastEquipped ~= equipped then
+									equipTool(lastEquipped and lastEquipped.inventoryItemValue or cuffs)
+								end
 							end
 						end
 					end
@@ -1358,15 +1385,15 @@ run(function()
 	Range = AutoEject:CreateSlider({
 		Name = 'Range',
 		Min = 1,
-		Max = 40,
-		Default = 40,
+		Max = 18,
+		Default = 18,
 		Suffix = function(val)
 			return val == 1 and 'stud' or 'studs'
 		end
 	})
-	Hand = AutoEject:CreateToggle({
-		Name = 'Hand Check',
-		Tooltip = 'Only eject while holding handcuffs'
+	AutoEquip = AutoEject:CreateToggle({
+		Name = 'AutoEquip',
+		Tooltip = 'Automatically equip the handcuffs for performing actions (RISKY)'
 	})
 end)
 
@@ -1597,10 +1624,15 @@ run(function()
 						local isTaser = equipped and equipped.__ClassName == 'Taser'
 	
 						if (not HandCheck.Enabled or isTaser) then
+							if not (equipped and equipped.BulletEmitter) then
+								OriginScanner:UpdateIgnore({})
+							end
+	
 							local entities = entitylib.AllPosition({
 								Players = true,
 								Part = 'RootPart',
 								Range = Range.Value,
+								Wallcheck = true,
 								Arrest = true
 							})
 	
@@ -1616,13 +1648,15 @@ run(function()
 											end
 										end
 	
-										drawTaser(equipped and equipped.Tip or entitylib.character.RootPart, entity.RootPart.Position)
-										taser:SetAttribute('LastUsedAt', os.clock())
-										taser:SetAttribute('NextUse', os.clock() + 10)
+										if equipped and equipped.__ClassName == 'Taser' then
+											drawTaser(equipped and equipped.Tip or entitylib.character.RootPart, entity.RootPart.Position)
+											taser:SetAttribute('LastUsedAt', os.clock())
+											taser:SetAttribute('NextUse', os.clock() + 10)
 	
-										jb:FireServer('TaseReplicate', entity.RootPart.Position)
-										jb:FireServer('Tase', entity.RootPart.Position, entity.RootPart, entity.Player)
-										equipped:BroadcastInputBegan({UserInputType = Enum.UserInputType.MouseButton1, KeyCode = Enum.KeyCode.None})
+											jb:FireServer('TaseReplicate', entity.RootPart.Position)
+											jb:FireServer('Tase', entity.RootPart.Position, entity.RootPart, entity.Player)
+											equipped:BroadcastInputBegan({UserInputType = Enum.UserInputType.MouseButton1, KeyCode = Enum.KeyCode.None})
+										end
 	
 										if not isTaser and lastEquipped ~= equipped then
 											equipTool(lastEquipped and lastEquipped.inventoryItemValue or taser)
