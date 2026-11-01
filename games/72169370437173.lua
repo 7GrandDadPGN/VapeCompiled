@@ -176,6 +176,43 @@ local function argCheck(expected, ...)
 end
 
 run(function()
+	local function waitForChildOfType(obj, name, timeout, prop, namecheck)
+		local expireTime = os.clock() + timeout
+
+		repeat
+			local result = prop and obj[name] or obj:FindFirstChildWhichIsA(name)
+			if result and namecheck then
+				if result.Name ~= namecheck then
+					result = nil
+				end
+			end
+
+			if result then
+				return cloneref(result)
+			end
+
+			task.wait()
+		until expireTime < os.clock()
+	end
+
+	entitylib.getUpdateConnections = function(entity)
+		local hum = entity.Humanoid
+		return {
+			hum:GetPropertyChangedSignal('Health'),
+			hum:GetPropertyChangedSignal('MaxHealth'),
+			entity.Character:GetAttributeChangedSignal('Armor'),
+			{
+				Connect = function()
+					entity.Friend = entity.Player and isFriend(entity.Player) or nil
+					entity.Target = entity.Player and isTarget(entity.Player) or nil
+					return {
+						Disconnect = function() end
+					}
+				end
+			}
+		}
+	end
+
 	entitylib.targetCheck = function(entity)
 		if entity.NPC then return lplr:GetAttribute('Team') ~= entity.Character:GetAttribute('Team') end
 		if isFriend(entity.Player) then return false end
@@ -183,8 +220,63 @@ run(function()
 		return lplr:GetAttribute('Team') ~= entity.Character:GetAttribute('Team')
 	end
 
+	entitylib.isVulnerable = function(entity)
+		return entity.Health > 0 and not entity.Character:GetAttribute('Parrying') and not entity.Character.FindFirstChildWhichIsA(entity.Character, 'ForceField')
+	end
+
 	entitylib.addPlayer = function(plr)
 
+	end
+
+	entitylib.addEntity = function(char, plr, teamfunc, spawntime)
+		if not char then
+			return
+		end
+
+		entitylib.EntityThreads[char] = task.spawn(function()
+			local hum = waitForChildOfType(char, 'Humanoid', 10)
+			local humrootpart = hum and waitForChildOfType(hum, 'RootPart', workspace.StreamingEnabled and math.huge or 10, true, 'HumanoidRootPart')
+			local head = cloneref(char:WaitForChild('Head', 10) or humrootpart or workspace)
+
+			if hum and humrootpart then
+				local entity = {
+					Connections = {},
+					Character = char,
+					Health = hum.Health + (char:GetAttribute('Armor') or 0),
+					Head = head,
+					Humanoid = hum,
+					HumanoidRootPart = humrootpart,
+					HipHeight = hum.HipHeight + (humrootpart.Size.Y / 2) + (hum.RigType == Enum.HumanoidRigType.R6 and 2 or 0),
+					MaxHealth = hum.MaxHealth,
+					NPC = plr == nil,
+					Player = plr,
+					RootPart = humrootpart,
+					SpawnTime = spawntime or 0,
+					TeamCheck = teamfunc
+				}
+
+				if plr == lplr then
+					entitylib.character = entity
+					entitylib.isAlive = true
+					entitylib.Events.LocalAdded:Fire(entity)
+				else
+					entity.Targetable = entitylib.targetCheck(entity)
+
+					for _, connection in entitylib.getUpdateConnections(entity) do
+						table.insert(entity.Connections, connection:Connect(function()
+							entity.Health = hum.Health + (char:GetAttribute('Armor') or 0)
+							entity.MaxHealth = hum.MaxHealth
+							entitylib.Events.EntityUpdated:Fire(entity)
+						end))
+					end
+
+					table.insert(entitylib.List, entity)
+					entitylib.Events.EntityAdded:Fire(entity)
+				end
+			end
+
+			entitylib.EntityThreads[char] = nil
+		end)
 	end
 
 	local oldstart = entitylib.start
@@ -338,21 +430,22 @@ run(function()
 	local function Hook(...)
 		hideStack()
 
-		if not debug.validlevel(2) then
-			local n, s = debug.info(1, 'ns')
-			if not (argCheck({{'table'}, {'number'}, {'number'}, {'number'}}, ...) and n == '' and s == cmp) then
-				return oldhitbox(...)
-			end
-		else
+		local n, s = debug.info(1, 'ns')
+		if not (not debug.validlevel(2) and argCheck({{'table'}, {'number'}, {'number'}, {'number'}}, ...) and n == '' and s == cmp) then
 			return oldhitbox(...)
 		end
 
-		local args = table.pack(...)
-		for _, v in HitboxHook.Hooks do
-			if v[2](args) then return end
+		local self = ...
+		if getrawmetatable(self) == tribes.Melee and type(rawget(self, 'lastSwing')) == 'number' then
+			local args = table.pack(...)
+			for _, v in HitboxHook.Hooks do
+				if v[2](args) then return end
+			end
+
+			return oldhitbox(unpack(args, 1, args.n))
 		end
 
-		return oldhitbox(unpack(args, 1, args.n))
+		return oldhitbox(...)
 	end
 
 	function HitboxHook:Add(key, val, priority)
@@ -515,12 +608,12 @@ run(function()
 		Name = 'Reach',
 		Function = function(callback)
 			if callback then
-				--[[HitboxHook:Add('Reach', function(args)
+				HitboxHook:Add('Reach', function(args)
 					args[2] += Value.Value
 					args[3] = math.min(args[3] + Arc.Value, 90)
-				end)]]
+				end)
 			else
-				--HitboxHook:Remove('Reach')
+				HitboxHook:Remove('Reach')
 			end
 		end,
 		Tooltip = 'Extends attack reach'
@@ -610,6 +703,11 @@ run(function()
 				end
 			end
 	
+			local arg = ...
+			if arg and not (entitylib.isAlive and (arg - entitylib.character.RootPart.Position).Magnitude < 8) then
+				return old(...)
+			end
+	
 			local entity = entitylib.EntityMouse({
 				Range = Range.Value,
 				Part = Part.Value,
@@ -691,7 +789,6 @@ run(function()
 					return
 				end
 	
-				if true then return end
 				old = hookfunction(rawget(tribes.Util, 'AimDirection'), function(...)
 					return Hook(...)
 				end)
@@ -862,7 +959,7 @@ run(function()
 						local attacked, old, oldpos
 						local handler = rawget(tribes.State, 'handler')
 	
-						if entitylib.isAlive and handler and rawget(handler, 'lastSwing') then
+						if entitylib.isAlive and handler and type(rawget(handler, 'lastSwing')) == 'number' then
 							local localPos = entitylib.character.RootPart.Position
 							local localFacing = entitylib.character.RootPart.CFrame.LookVector * Vector3.new(1, 0, 1)
 							local entities = entitylib.AllPosition({
@@ -1182,51 +1279,57 @@ run(function()
 end)
 
 run(function()
-	local old, oldshake, oldslow
+	local AntiFreeze
 	
-	vape.Categories.Blatant:CreateModule({
-		Name = 'NoRecoil',
+	local function LocalAdded(char)
+		AntiFreeze:Clean(char.RootPart.AttributeChanged:Connect(function(key)
+			if key == 'SFrozen' and char.RootPart:GetAttribute(key) then
+				char.RootPart:SetAttribute(key, nil)
+			end
+		end))
+	
+		char.RootPart:SetAttribute('SFrozen', nil)
+	end
+	
+	AntiFreeze = vape.Categories.Blatant:CreateModule({
+		Name = 'AntiFreeze',
 		Function = function(callback)
 			if callback then
-				if true then return end
-				old = hookfunction(rawget(tribes.Util, 'Recoil'), newcclosure(function(...)
-					hideStack()
-					if not argCheck({{'number'}, {'number', 'nil'}, {'number', 'nil'}}, ...) then
-						return old(...)
-					end
-				end))
-	
-				oldshake = hookfunction(rawget(tribes.Util, 'Shake'), newcclosure(function(...)
-					hideStack()
-					if not argCheck({{'number'}, {'number', 'nil'}, {'number', 'nil'}, {'number', 'nil'}}, ...) then
-						return oldshake(...)
-					end
-				end))
-	
-				oldslow = hookfunction(rawget(tribes.Util, 'RecoilSlow'), newcclosure(function(...)
-					hideStack()
-					if not argCheck({{'number'}, {'number', 'nil'}, {'number', 'nil'}, {'number', 'nil'}}, ...) then
-						return old(...)
-					end
-				end))
-			else
-				if old then
-					restorefunction(rawget(tribes.Util, 'Recoil'))
-					old = nil
-				end
-	
-				if oldshake then
-					restorefunction(rawget(tribes.Util, 'Shake'))
-					oldshake = nil
-				end
-	
-				if oldslow then
-					restorefunction(rawget(tribes.Util, 'RecoilSlow'))
-					oldslow = nil
+				AntiFreeze:Clean(entitylib.Events.LocalAdded:Connect(LocalAdded))
+				if entitylib.isAlive then
+					LocalAdded(entitylib.character)
 				end
 			end
 		end,
-		Tooltip = 'Remove camera shake & recoil from many aspects of the game.'
+		Tooltip = 'Enable movement during the voting period'
+	})
+end)
+
+run(function()
+	local AntiStun
+	
+	local function LocalAdded(char)
+		AntiStun:Clean(char.RootPart.AttributeChanged:Connect(function(key)
+			if (key == 'SNoJump' or key == 'SSlow') and char.RootPart:GetAttribute(key) then
+				char.RootPart:SetAttribute(key, nil)
+			end
+		end))
+	
+		char.RootPart:SetAttribute('SNoJump', nil)
+		char.RootPart:SetAttribute('SSlow', nil)
+	end
+	
+	AntiStun = vape.Categories.Blatant:CreateModule({
+		Name = 'AntiStun',
+		Function = function(callback)
+			if callback then
+				AntiStun:Clean(entitylib.Events.LocalAdded:Connect(LocalAdded))
+				if entitylib.isAlive then
+					LocalAdded(entitylib.character)
+				end
+			end
+		end,
+		Tooltip = 'Prevent snap traps from freezing you.'
 	})
 end)
 
@@ -1234,35 +1337,35 @@ run(function()
 	local old
 	local valid = {
 		[lplr.PlayerScripts.Combat.Handlers.Bow:GetFullName()] = {
-			'StartDraw',
-			'Input'
+			StartDraw = 'Draw',
+			Input = 'Aim'
 		},
 		[lplr.PlayerScripts.Combat.Handlers.Gun:GetFullName()] = {
-			'LocalReload'
+			LocalReload = 'Reload'
 		},
 		[lplr.PlayerScripts.Combat.Handlers.Melee:GetFullName()] = {
-			'SetBlock',
-			'StartCharge',
-			'RaiseParry'
+			SetBlock = 'Block',
+			StartCharge = 'Charge',
+			RaiseParry = 'Parry'
 		},
 		[lplr.PlayerScripts.Combat.Handlers.Throw:GetFullName()] = {
-			'Start',
-			'Input'
+			Start = 'Throw',
+			Input = 'Aim'
 		},
 		[lplr.PlayerScripts.Combat.Handlers.Use:GetFullName()] = {
-			'Activate'
+			Activate = 'Use'
 		}
 	}
 	
 	local function Hook(...)
 		hideStack()
 		local n, s = debug.info(1, 'ns')
-		if not (argCheck({{'string'}, {'number', 'nil'}}, ...) and valid[s] and table.find(valid[s], n)) then
+		if not (argCheck({{'string'}, {'number', 'nil'}}, ...) and valid[s] and valid[s][n]) then
 			return old(...)
 		end
 	
-		local speed = select(2, ...)
-		if speed == nil or speed >= 1 then
+		local name, arg = ...
+		if valid[s][n] ~= name or arg == nil or (not math.isfinite(arg) or math.clamp(arg, 0, 1) ~= arg) then
 			return old(...)
 		end
 	end
@@ -1271,7 +1374,6 @@ run(function()
 		Name = 'NoSlowdown',
 		Function = function(callback)
 			if callback then
-				if true then return end
 				old = hookfunction(tribes.SetSpeed, function(...)
 					return Hook(...)
 				end)
@@ -1356,7 +1458,8 @@ run(function()
 	
 	local function Hook(...)
 		hideStack()
-		local n, s = debug.info(2, 'ns')
+	
+		local n, s = debug.info(1, 'ns')
 		if not (argCheck({{'table'}}, ...) and n == 'Swing' and s == cmp) then
 			return old(...)
 		end
@@ -1368,13 +1471,14 @@ run(function()
 				rawset(self, 'lastSwing', rawget(self, 'lastSwing') - (type(cooldown) == 'number' and cooldown or 0.1))
 			end)
 		end
+	
+		return old(...)
 	end
 	
 	SwingSpeed = vape.Categories.Blatant:CreateModule({
 		Name = 'SwingSpeed',
 		Function = function(callback)
 			if callback then
-				if true then return end
 				old = hookfunction(rawget(tribes.Melee, 'OneHanded'), function(...)
 					return Hook(...)
 				end)
@@ -1933,6 +2037,30 @@ run(function()
 		DefaultMax = 64,
 		Darker = true,
 		Visible = false
+	})
+end)
+
+run(function()
+	local NoSmoke
+	
+	NoSmoke = vape.Categories.Render:CreateModule({
+		Name = 'NoSmoke',
+		Function = function(callback)
+			if callback then
+				NoSmoke:Clean(workspace.FX.ChildAdded:Connect(function(obj)
+					if obj.Name == 'PuffFX' then
+						obj:Destroy()
+					end
+				end))
+	
+				for _, obj in workspace.FX:GetChildren() do
+					if obj.Name == 'PuffFX' then
+						obj:Destroy()
+					end
+				end
+			end
+		end,
+		Tooltip = 'Prevent smoke bombs from rendering.'
 	})
 end)
 

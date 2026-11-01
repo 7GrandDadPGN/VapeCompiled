@@ -696,10 +696,11 @@ run(function()
 		lplr.PlayerScripts.LocalScript
 	}, {
 		Action3 = 'Pickup',
-		AttemptArrest = 'Arrest',
+		beginArrestHold = 'ArrestBegin',
+		finishArrestHold = 'ArrestEnd',
 		attemptPunch = 'Punch',
 		AttemptPickPocket = 'Pickpocket',
-		AttemptVehicleEject = 'Eject',
+		ejectVehicleOccupant = 'Eject',
 		AttemptVehicleEnter = 'GetIn',
 		BroadcastInputBegan = 'InputBegan',
 		BroadcastInputEnded = 'InputEnded',
@@ -708,8 +709,9 @@ run(function()
 		Gun = 'PopTires',
 		GunShopUI = 'UnequipItem',
 		GunShopUI1 = 'EquipItem',
-		LocalScript2 = 'LookAngle',
+		LocalScript4 = 'LookAngle',
 		LocalScript = 'SelfDamage',
+		LocalScript2 = '',
 		onPressed = 'FlipVehicle',
 		OnJump = 'GetOut',
 		OnJump1 = 'GetOut',
@@ -1198,7 +1200,9 @@ run(function()
 		Name = 'AntiTaze',
 		Function = function(callback)
 			if callback then
-				old = hookfunction(jb.StunFunction, function() end)
+				if jb.StunFunction then
+					old = hookfunction(jb.StunFunction, function() end)
+				end
 			else
 				if old then
 					restorefunction(jb.StunFunction)
@@ -1214,7 +1218,6 @@ run(function()
 	local AutoArrest
 	local Range
 	local AutoEquip
-	local cooldown = 0
 	
 	local function equipTool(tool)
 		local obj = jb.InventoryItemBinder:Get(tool)
@@ -1227,6 +1230,8 @@ run(function()
 		Name = 'AutoArrest',
 		Function = function(callback)
 			if callback then
+				local randkey, savetime
+	
 				repeat
 					local cuffs = InvTracker.Inventories[lplr].Handcuffs
 	
@@ -1244,29 +1249,37 @@ run(function()
 	
 						for _, entity in entities do
 							if entity.Player and isIllegal(entity) then
-								if not entity.Character:GetAttribute('InVehicle') and not target and cooldown < os.clock() then
-									target = entity.Player.Name
+								if not entity.Character:GetAttribute('InVehicle') and not target then
+									target = entity.Player
 								end
 							end
 						end
 	
 						if target then
 							local lastEquipped = jb.ItemSystemController:GetLocalEquipped()
-							if AutoEquip.Enabled and not (lastEquipped and lastEquipped.__ClassName == 'Handcuffs') then
+							if AutoEquip.Enabled and not (lastEquipped and lastEquipped.__ClassName == 'Handcuffs') and (not savetime or (os.clock() - savetime) > 0.45) then
 								equipTool(cuffs)
 							end
 	
 							local equipped = jb.ItemSystemController:GetLocalEquipped()
 							if equipped and equipped.__ClassName == 'Handcuffs' then
-								if target then
-									jb:FireServer('Arrest', target)
-									cooldown = os.clock() + 0.5
+								if savetime then
+									if (os.clock() - savetime) > 0.5 then
+										jb:FireServer('ArrestEnd', randkey)
+										savetime = nil
+									end
+								else
+									savetime = os.clock()
+									randkey = math.random(1, 1073741824)
+									jb:FireServer('ArrestBegin', target, randkey)
 								end
 							end
 	
 							if AutoEquip.Enabled and lastEquipped ~= equipped then
 								equipTool(lastEquipped and lastEquipped.inventoryItemValue or cuffs)
 							end
+						else
+							savetime = nil
 						end
 					end
 	
@@ -1564,6 +1577,13 @@ run(function()
 		end
 	end
 	
+	local function equipTool(tool)
+		local obj = jb.InventoryItemBinder:Get(tool)
+		if obj then
+			obj:AttemptSelect()
+		end
+	end
+	
 	AutoTaze = vape.Categories.Blatant:CreateModule({
 		Name = 'AutoTaze',
 		Function = function(callback)
@@ -1586,18 +1606,25 @@ run(function()
 							if (taser:GetAttribute('NextUse') or 0) < os.clock() then
 								for _, entity in entities do
 									if isIllegal(entity) and (entity.VehicleTimer or 0) < os.clock() and not ((VehicleCheck.Enabled and entity.Character:GetAttribute('InVehicle')) or entity.Head.CanCollide) then
+										local lastEquipped
+										if not isTaser then
+											lastEquipped = jb.ItemSystemController:GetLocalEquipped()
+											if not (lastEquipped and lastEquipped.__ClassName == 'Taser') then
+												equipTool(taser)
+												equipped = jb.ItemSystemController:GetLocalEquipped()
+											end
+										end
+	
 										drawTaser(equipped and equipped.Tip or entitylib.character.RootPart, entity.RootPart.Position)
 										taser:SetAttribute('LastUsedAt', os.clock())
 										taser:SetAttribute('NextUse', os.clock() + 10)
 	
-										if isTaser then
-											jb:FireServer('TaseReplicate', entity.RootPart.Position)
-										end
+										jb:FireServer('TaseReplicate', entity.RootPart.Position)
+										jb:FireServer('Tase', entity.RootPart.Position, entity.RootPart, entity.Player)
+										equipped:BroadcastInputBegan({UserInputType = Enum.UserInputType.MouseButton1, KeyCode = Enum.KeyCode.None})
 	
-										jb:FireServer('Tase', entity.Humanoid, entity.RootPart, entity.RootPart.Position)
-	
-										if isTaser then
-											equipped:BroadcastInputBegan({UserInputType = Enum.UserInputType.MouseButton1, KeyCode = Enum.KeyCode.None})
+										if not isTaser and lastEquipped ~= equipped then
+											equipTool(lastEquipped and lastEquipped.inventoryItemValue or taser)
 										end
 	
 										break
@@ -2193,8 +2220,8 @@ run(function()
 	Value = Speed:CreateSlider({
 		Name = 'Speed',
 		Min = 1,
-		Max = 150,
-		Default = 50,
+		Max = 33,
+		Default = 33,
 		Suffix = function(val)
 			return val == 1 and 'stud' or 'studs'
 		end
