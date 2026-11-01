@@ -436,7 +436,7 @@ run(function()
 		end
 
 		local self = ...
-		if getrawmetatable(self) == tribes.Melee and type(rawget(self, 'lastSwing')) == 'number' then
+		if getrawmetatable(self) == tribes.Melee and self == tribes.State.handler and type(rawget(self, 'lastSwing')) == 'number' then
 			local args = table.pack(...)
 			for _, v in HitboxHook.Hooks do
 				if v[2](args) then return end
@@ -670,6 +670,13 @@ run(function()
 		}
 	}
 	
+	local validarg = {
+		[lplr.PlayerScripts.Combat.Handlers.Bow:GetFullName()] = 'Muzzle',
+		[lplr.PlayerScripts.Combat.Handlers.Gun:GetFullName()] = 'Muzzle',
+		[lplr.PlayerScripts.Combat.Handlers.Melee:GetFullName()] = 'None',
+		[lplr.PlayerScripts.Combat.Handlers.Throw:GetFullName()] = 'Throw'
+	}
+	
 	local function getMousePosition()
 		if inputService.TouchEnabled then
 			return gameCamera.ViewportSize / 2
@@ -704,8 +711,16 @@ run(function()
 			end
 	
 			local arg = ...
-			if arg and not (entitylib.isAlive and (arg - entitylib.character.RootPart.Position).Magnitude < 8) then
-				return old(...)
+			if arg then
+				if not validarg[s] then
+					return old(...)
+				elseif validarg[s] == 'Muzzle' and arg ~= tribes.Util.ShotOrigin(handler.ctx.tool, 'Muzzle') then
+					return old(...)
+				elseif validarg[s] == 'None' and arg ~= tribes.Util.ShotOrigin(nil) then
+					return old(...)
+				elseif validarg[s] == 'Throw' and arg ~= tribes.Util.ShotOrigin(handler.ctx.tool, 'Tip') and arg ~= tribes.Util.ShotOrigin(nil) then
+					return old(...)
+				end
 			end
 	
 			local entity = entitylib.EntityMouse({
@@ -1334,54 +1349,33 @@ run(function()
 end)
 
 run(function()
-	local old
-	local valid = {
-		[lplr.PlayerScripts.Combat.Handlers.Bow:GetFullName()] = {
-			StartDraw = 'Draw',
-			Input = 'Aim'
-		},
-		[lplr.PlayerScripts.Combat.Handlers.Gun:GetFullName()] = {
-			LocalReload = 'Reload'
-		},
-		[lplr.PlayerScripts.Combat.Handlers.Melee:GetFullName()] = {
-			SetBlock = 'Block',
-			StartCharge = 'Charge',
-			RaiseParry = 'Parry'
-		},
-		[lplr.PlayerScripts.Combat.Handlers.Throw:GetFullName()] = {
-			Start = 'Throw',
-			Input = 'Aim'
-		},
-		[lplr.PlayerScripts.Combat.Handlers.Use:GetFullName()] = {
-			Activate = 'Use'
-		}
+	local NoSlowdown
+	local whitelist = {
+		Charge = true,
+		Use = true,
+		Block = true,
+		Reload = true,
+		Aim = true
 	}
 	
-	local function Hook(...)
-		hideStack()
-		local n, s = debug.info(1, 'ns')
-		if not (argCheck({{'string'}, {'number', 'nil'}}, ...) and valid[s] and valid[s][n]) then
-			return old(...)
-		end
-	
-		local name, arg = ...
-		if valid[s][n] ~= name or arg == nil or (not math.isfinite(arg) or math.clamp(arg, 0, 1) ~= arg) then
-			return old(...)
-		end
-	end
-	
-	vape.Categories.Blatant:CreateModule({
+	NoSlowdown = vape.Categories.Blatant:CreateModule({
 		Name = 'NoSlowdown',
 		Function = function(callback)
 			if callback then
-				old = hookfunction(tribes.SetSpeed, function(...)
-					return Hook(...)
-				end)
-			else
-				if old then
-					restorefunction(tribes.SetSpeed)
-					old = nil
+				local inputs = setmetatable({}, {__mode = 'v'})
+				for _, input in lplr.TribesInputs:GetChildren() do
+					if input:IsA('InputAction') and input.Type == Enum.InputActionType.Bool and whitelist[input.Name] then
+						table.insert(inputs, input)
+					end
 				end
+	
+				NoSlowdown:Clean(runService.PreSimulation:Connect(function()
+					for _, input in inputs do
+						if input:GetState() then
+							input:Fire(false)
+						end
+					end
+				end))
 			end
 		end,
 		Tooltip = 'Prevents slowing down when using items.'
@@ -1465,7 +1459,7 @@ run(function()
 		end
 	
 		local self = ...
-		if getrawmetatable(self) == tribes.Melee and type(rawget(self, 'lastSwing')) == 'number' then
+		if getrawmetatable(self) == tribes.Melee and self == tribes.State.handler and type(rawget(self, 'lastSwing')) == 'number' then
 			task.defer(function()
 				local cooldown = safeget(self, 'preset', 'hitDelay')
 				rawset(self, 'lastSwing', rawget(self, 'lastSwing') - (type(cooldown) == 'number' and cooldown or 0.1))
