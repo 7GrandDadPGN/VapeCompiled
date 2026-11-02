@@ -108,19 +108,31 @@ local function isTarget(plr)
 end
 
 local function canClick()
-	local mousepos = (inputService:GetMouseLocation() - guiService:GetGuiInset())
-	for _, v in lplr.PlayerGui:GetGuiObjectsAtPosition(mousepos.X, mousepos.Y) do
-		local obj = v:FindFirstAncestorOfClass('ScreenGui')
-		if v.Active and v.Visible and obj and obj.Enabled then
+	local pos = (inputService:GetMouseLocation() - guiService:GetGuiInset())
+
+	if gethui and gethui():IsA('BasePlayerGui') then
+		for _, obj in gethui():GetGuiObjectsAtPosition(pos.X, pos.Y) do
+			local holder = obj:FindFirstAncestorOfClass('ScreenGui')
+			if obj.Active and obj.Visible and holder and holder.Enabled then
+				return false
+			end
+		end
+	end
+
+	for _, obj in coreGui:GetGuiObjectsAtPosition(pos.X, pos.Y) do
+		local holder = obj:FindFirstAncestorOfClass('ScreenGui')
+		if obj.Active and obj.Visible and holder and holder.Enabled then
 			return false
 		end
 	end
-	for _, v in coreGui:GetGuiObjectsAtPosition(mousepos.X, mousepos.Y) do
-		local obj = v:FindFirstAncestorOfClass('ScreenGui')
-		if v.Active and v.Visible and obj and obj.Enabled then
+
+	for _, obj in lplr.PlayerGui:GetGuiObjectsAtPosition(pos.X, pos.Y) do
+		local holder = obj:FindFirstAncestorOfClass('ScreenGui')
+		if obj.Active and obj.Visible and holder and holder.Enabled then
 			return false
 		end
 	end
+
 	return (not vape.gui.ScaledGui.ClickGui.Visible) and (not inputService:GetFocusedTextBox())
 end
 
@@ -1156,7 +1168,7 @@ run(function()
 				until not AutoClicker.Enabled
 			end
 		end,
-		Tooltip = 'Automatically clicks for you'
+		Tooltip = 'Automatically clicks for you.'
 	})
 	Mode = AutoClicker:CreateDropdown({
 		Name = 'Mode',
@@ -1269,6 +1281,7 @@ run(function()
 	local Mode
 	local Method
 	local RayMethod
+	local SchedulerPriority
 	local IgnoredScripts
 	local Range
 	local HitChance
@@ -1294,8 +1307,8 @@ run(function()
 	local oldnamecall, oldhook, hookmethod
 	local rand = Random.new()
 	local clickDelay = os.clock()
+	local fireOffset = CFrame.new()
 	local didOth
-	local fireOffset
 
 	local function getMousePosition()
 		if inputService.TouchEnabled then
@@ -1486,7 +1499,7 @@ run(function()
 					end))
 
 					local key = httpService:GenerateGUID(false)
-					runService:BindToRenderStep(key, 0, function()
+					runService:BindToRenderStep(key, SchedulerPriority.Value, function()
 						if old then
 							gameCamera.CFrame = old
 							old = nil
@@ -1618,6 +1631,8 @@ run(function()
 			end
 
 			RayMethod.Object.Visible = val == 'Raycast'
+			IgnoredScripts.Object.Visible = val ~= 'TaskScheduler'
+			SchedulerPriority.Object.Visible = val == 'TaskScheduler'
 		end,
 		Tooltip = 'FindPartOnRay* - Deprecated methods of raycasting used in old games\nRaycast - The modern raycast method\n*PointToRay - Method to generate a ray from a screen position\nRay - Used in old games'
 	})
@@ -1658,6 +1673,21 @@ run(function()
 		Max = 100,
 		Default = 65,
 		Suffix = '%'
+	})
+	SchedulerPriority = SilentAim:CreateSlider({
+		Name = 'Scheduler Priority',
+		Min = -5,
+		Max = 5,
+		Default = 0,
+		Function = function()
+			if SilentAim.Enabled then
+				SilentAim:Toggle()
+				SilentAim:Toggle()
+			end
+		end,
+		Darker = true,
+		Visible = false,
+		Tooltip = 'Adjust the RenderStepped priority for TaskScheduler, only adjust this if you know what you are doing!'
 	})
 	AutoFire = SilentAim:CreateToggle({
 		Name = 'AutoFire',
@@ -2457,7 +2487,7 @@ run(function()
 		ExtraText = function()
 			return Mode.Value
 		end,
-		Tooltip = 'Lets you jump higher'
+		Tooltip = 'Lets you jump higher.'
 	})
 	Mode = HighJump:CreateDropdown({
 		Name = 'Mode',
@@ -2605,7 +2635,7 @@ run(function()
 				end
 			end
 		end,
-		Tooltip = 'Turns you invisible.'
+		Tooltip = 'Turns you invisible using animations.'
 	})
 end)
 
@@ -2992,7 +3022,7 @@ run(function()
 		ExtraText = function()
 			return Mode.Value
 		end,
-		Tooltip = 'Lets you jump farther'
+		Tooltip = 'Lets you jump farther.'
 	})
 	Mode = LongJump:CreateDropdown({
 		Name = 'Mode',
@@ -3259,7 +3289,7 @@ run(function()
 				fflag = nil
 			end
 		end,
-		Tooltip = 'Lets you Phase/Clip through walls. (Hold shift to use Phase over spider)'
+		Tooltip = 'Phase/Clip through walls. (Hold Left Shift to use Phase over Spider)'
 	})
 	Mode = Phase:CreateDropdown({
 		Name = 'Mode',
@@ -3529,7 +3559,7 @@ run(function()
 				SpiderShift = false
 			end
 		end,
-		Tooltip = 'Lets you climb up walls. (Hold shift to use Phase over spider)'
+		Tooltip = 'Lets you climb up obstacles. (Hold Left Shift to use Phase over Spider)'
 	})
 	Mode = Spider:CreateDropdown({
 		Name = 'Mode',
@@ -3615,7 +3645,7 @@ run(function()
 				end
 			end
 		end,
-		Tooltip = 'Makes your character spin around in circles (does not work in first person)'
+		Tooltip = 'Automatically spins your character around in circles. (Does not work in first person)'
 	})
 	Mode = SpinBot:CreateDropdown({
 		Name = 'Mode',
@@ -3684,7 +3714,7 @@ run(function()
 				end
 			end
 		end,
-		Tooltip = 'Lets you swim midair'
+		Tooltip = 'Lets you swim midair.'
 	})
 end)
 
@@ -3776,7 +3806,7 @@ run(function()
 				TargetStrafeVector = nil
 			end
 		end,
-		Tooltip = 'Automatically strafes around the opponent'
+		Tooltip = 'Automatically strafes around nearby entities.'
 	})
 	Targets = TargetStrafe:CreateTargets({
 		Players = true,
@@ -3826,7 +3856,7 @@ run(function()
 				end))
 			end
 		end,
-		Tooltip = 'Change the game speed.'
+		Tooltip = 'Modifies game timer'
 	})
 	Value = Timer:CreateSlider({
 		Name = 'Value',
@@ -4152,7 +4182,7 @@ run(function()
 				table.clear(Threads)
 			end
 		end,
-		Tooltip = 'Render players through walls'
+		Tooltip = 'Render players through walls.'
 	})
 	Targets = Chams:CreateTargets({
 		Players = true,
@@ -7391,15 +7421,70 @@ end)
 run(function()
 	local Blink
 	local Type
+	local Fake
 	local AutoSend
 	local AutoSendLength
+	local Folder = Instance.new('Folder')
+	Folder.Parent = vape.holder
 	local oldphys, oldsend
+	local boxes = {}
+	local whitelist = {
+		Head = true,
+		Torso = true,
+		UpperTorso = true,
+		LowerTorso = true,
+		['Left Arm'] = true,
+		['Right Arm'] = true,
+		['Left Leg'] = true,
+		['Right Leg'] = true,
+		LeftUpperArm = true,
+		RightUpperArm = true,
+		LeftLowerArm = true,
+		RightLowerArm = true,
+		LeftHand = true,
+		RightHand = true,
+		LeftUpperLeg = true,
+		RightUpperLeg = true,
+		LeftLowerLeg = true,
+		RightLowerLeg = true,
+		LeftFoot = true,
+		RightFoot = true
+	}
+	
+	local function updateBoxes()
+		if Blink.Enabled and Fake.Enabled and entitylib.isAlive then
+			for _, part in entitylib.character.Character:GetChildren() do
+				if part:IsA('BasePart') and whitelist[part.Name] then
+					if not boxes[part.Name] then
+						local box = Instance.new(part.Name == 'Head' and 'SphereHandleAdornment' or 'BoxHandleAdornment')
+						if part.Name == 'Head' then
+							box.Radius = 0.75
+						else
+							box.Size = part.Size
+						end
+	
+						box.AlwaysOnTop = true
+						box.Adornee = workspace
+						box.ZIndex = 10
+						box.Transparency = 0.5
+						box.Parent = Folder
+						boxes[part.Name] = box
+					end
+	
+					local box = boxes[part.Name]
+					box.CFrame = workspace:GetPivot():ToObjectSpace(part.CFrame)
+				end
+			end
+		end
+	end
 	
 	Blink = vape.Categories.Utility:CreateModule({
 		Name = 'Blink',
 		Function = function(callback)
 			if callback then
+				updateBoxes()
 				local teleported
+				local timetaken = os.clock()
 				Blink:Clean(lplr.OnTeleport:Connect(function()
 					setfflag('PhysicsSenderMaxBandwidthBps', '38760')
 					setfflag('DataSenderRate', '60')
@@ -7408,8 +7493,10 @@ run(function()
 	
 				repeat
 					local physicsrate, senderrate = '0', Type.Value == 'All' and '-1' or '60'
-					if AutoSend.Enabled and tick() % (AutoSendLength.Value + 0.1) > AutoSendLength.Value then
+					if AutoSend.Enabled and (os.clock() - timetaken) > AutoSendLength.Value then
+						updateBoxes()
 						physicsrate, senderrate = '38760', '60'
+						timetaken = os.clock()
 					end
 	
 					if physicsrate ~= oldphys or senderrate ~= oldsend then
@@ -7418,13 +7505,17 @@ run(function()
 						oldphys, oldsend = physicsrate, senderrate
 					end
 	
-					task.wait(0.03)
+					task.wait(physicsrate == '38760' and 0.1 or 0.03)
 				until (not Blink.Enabled and not teleported)
 			else
 				if setfflag then
 					setfflag('PhysicsSenderMaxBandwidthBps', '38760')
 					setfflag('DataSenderRate', '60')
 				end
+	
+				Folder:ClearAllChildren()
+				table.clear(boxes)
+	
 				oldphys, oldsend = nil, nil
 			end
 		end,
@@ -7435,12 +7526,17 @@ run(function()
 		List = {'Movement Only', 'All'},
 		Tooltip = 'Movement Only - Only chokes movement packets\nAll - Chokes remotes & movement'
 	})
+	Fake = Blink:CreateToggle({
+		Name = 'Spawn fake',
+		Function = updateBoxes,
+		Tooltip = 'Spawns chams from where you started/are on the servers side.'
+	})
 	AutoSend = Blink:CreateToggle({
 		Name = 'Auto send',
 		Function = function(callback)
 			AutoSendLength.Object.Visible = callback
 		end,
-		Tooltip = 'Automatically send packets in intervals'
+		Tooltip = 'Automatically sends packets after the designated time limit has passed'
 	})
 	AutoSendLength = Blink:CreateSlider({
 		Name = 'Send threshold',
@@ -7449,6 +7545,7 @@ run(function()
 		Decimal = 100,
 		Darker = true,
 		Visible = false,
+		Tooltip = 'Allows you to choke your packets for a custom set time limit.\nAfter the time limit has passed, all packets will be sent.'
 		Suffix = function(val)
 			return val == 1 and 'second' or 'seconds'
 		end
