@@ -1201,6 +1201,55 @@ run(function()
 end)
 
 run(function()
+	local AntiNPC
+	
+	AntiNPC = vape.Categories.Blatant:CreateModule({
+		Name = 'AntiNPC',
+		Function = function(callback)
+			if callback then
+				repeat
+					local entities = entitylib.AllPosition({
+						Part = 'RootPart',
+						Range = 100,
+						NPCs = true
+					})
+	
+					for _, entity in entities do
+						if isnetworkowner(entity.RootPart) then
+							entity.RootPart.CFrame = CFrame.new()
+						end
+					end
+	
+					task.wait()
+				until not AntiNPC.Enabled
+			end
+		end,
+		Tooltip = 'Remove all NPC\'s you have network ownership over.'
+	})
+end)
+
+run(function()
+	local AntiPop
+	
+	AntiPop = vape.Categories.Blatant:CreateModule({
+		Name = 'AntiPop',
+		Function = function(callback)
+			if callback then
+				AntiPop:Clean(runService.PostSimulation:Connect(function()
+					if entitylib.isAlive and entitylib.character.Humanoid.Sit then
+						local packet = jb.VehicleController.GetLocalVehiclePacket()
+						if packet then
+							packet.Model:SetAttribute('VehicleTiresLastPop', nil)
+						end
+					end
+				end))
+			end
+		end,
+		Tooltip = 'Allow you to keep driving even while the vehicle is damaged.'
+	})
+end)
+
+run(function()
 	local AntiTaze
 	local old
 	
@@ -2074,6 +2123,43 @@ run(function()
 			end
 		end,
 		Tooltip = 'Instantly teleport bullets along the destination trajectory'
+	})
+end)
+
+run(function()
+	local InstantDirection
+	
+	InstantDirection = vape.Categories.Blatant:CreateModule({
+		Name = 'InstantDirection',
+		Function = function(callback)
+			if callback then
+				InstantDirection:Clean(runService.PreSimulation:Connect(function()
+					if entitylib.isAlive then
+						local hum = entitylib.character.Humanoid
+						local moveDir = hum.MoveDirection
+	
+						if hum.Sit and moveDir.Magnitude > 0 then
+							local packet = jb.VehicleController.GetLocalVehiclePacket()
+	
+							if packet then
+								local horizontal = packet.Seat.AssemblyLinearVelocity * Vector3.new(1, 0, 1)
+								local speed = math.max(horizontal.Magnitude, 1)
+								if (gameCamera.CFrame.LookVector * Vector3.new(1, 0, 1)):Angle(moveDir) > math.rad(140) then
+									speed = math.min(speed, 80)
+								end
+	
+								packet.Seat.CFrame = CFrame.lookAlong(packet.Seat.Position, Vector3.new(moveDir.X, math.clamp(packet.Seat.CFrame.LookVector.Y, -0.1, 0.5), moveDir.Z))
+								packet.Seat.AssemblyLinearVelocity = (moveDir * speed) + Vector3.new(0, packet.Seat.AssemblyLinearVelocity.Y, 0)
+							end
+						end
+					else
+						YLevel = nil
+						OldYLevel = nil
+					end
+				end))
+			end
+		end,
+		Tooltip = 'Allow you to instantly turn towards where you are moving with vehicles.'
 	})
 end)
 

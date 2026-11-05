@@ -651,7 +651,7 @@ function vape:CreateNotification(title, text, duration, type)
 		progress.Parent = notification
 
 		if tween.Tween then
-			tween:Tween(notification, TweenInfo.new(0.4, Enum.EasingStyle.Exponential), {
+			tween:Tween(notification, TweenInfo.new(0.326, Enum.EasingStyle.Exponential), {
 				AnchorPoint = Vector2.new(1, 0)
 			}, 'tweenstwo')
 
@@ -662,7 +662,7 @@ function vape:CreateNotification(title, text, duration, type)
 
 		task.delay(duration, function()
 			if tween.Tween then
-				tween:Tween(notification, TweenInfo.new(0.4, Enum.EasingStyle.Exponential), {
+				tween:Tween(notification, TweenInfo.new(0.326, Enum.EasingStyle.Exponential), {
 					AnchorPoint = Vector2.new(0, 0)
 				}, 'tweenstwo')
 			end
@@ -840,7 +840,7 @@ function vape:LoadGUI()
 	scarcitybanner.FontFace = uipallet.Font
 	scarcitybanner.Position = UDim2.fromScale(0, 0.97)
 	scarcitybanner.Size = UDim2.fromScale(1, 0.018)
-	scarcitybanner.Text = 'All update logs and game support are found in the discord, click the discord icon to join!'
+	scarcitybanner.Text = 'All update logs and game support are found in the discord, click the discord icon to join.'
 	scarcitybanner.TextColor3 = Color3.new(1, 1, 1)
 	scarcitybanner.TextScaled = true
 	scarcitybanner.TextStrokeTransparency = 0.5
@@ -2206,7 +2206,7 @@ function vape:LoadGUI()
 	vape:Clean(notifications.ChildRemoved:Connect(function()
 		for index, notif in notifications:GetChildren() do
 			if tween.Tween then
-				tween:Tween(notif, TweenInfo.new(0.4, Enum.EasingStyle.Exponential), {
+				tween:Tween(notif, TweenInfo.new(0.326, Enum.EasingStyle.Exponential), {
 					Position = UDim2.new(1, 0, 1, -(29 + (78 * index)))
 				})
 			end
