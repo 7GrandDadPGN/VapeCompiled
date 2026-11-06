@@ -84,6 +84,14 @@ local function getVehicleSeat(entity)
 	end
 end
 
+local function getCachedEntitySeat(entity)
+	if not entity.Seat then
+		entity.Seat = getVehicleSeat(entity)
+	end
+
+	return entity.Seat
+end
+
 local function isFriend(plr, recolor)
 	if vape.Categories.Friends.Options['Use friends'].Enabled then
 		local friend = table.find(vape.Categories.Friends.ListEnabled, plr.Name) and true
@@ -354,7 +362,10 @@ run(function()
 
 	entitylib.getUpdateConnections = function(entity)
 		local hum = entity.Humanoid
-		entity.InVehicle = not entity.Character:GetAttribute('HasHandcuffs') and (entity.Character:GetAttribute('InVehicle') or entity.InVehicle)
+		local isInVehicle = entity.Character:GetAttribute('InVehicle')
+		entity.Seat = isInVehicle and entity.Seat or nil
+		entity.VehicleState = isInVehicle
+		entity.InVehicle = not entity.Character:GetAttribute('HasHandcuffs') and (isInVehicle or entity.InVehicle)
 		entity.Illegal = isIllegal(entity, true)
 
 		return {
@@ -819,6 +830,7 @@ run(function()
 
 	vape:Clean(entitylib.Events.EntityUpdated:Connect(function(entity)
 		local isInVehicle = entity.Character:GetAttribute('InVehicle')
+		entity.Seat = isInVehicle and entity.Seat or nil
 		entity.VehicleState = isInVehicle
 		entity.InVehicle = not entity.Character:GetAttribute('HasHandcuffs') and (isInVehicle or entity.InVehicle)
 		entity.Illegal = isIllegal(entity, true)
@@ -1201,6 +1213,41 @@ run(function()
 end)
 
 run(function()
+	local AntiEject
+	
+	AntiEject = vape.Categories.Blatant:CreateModule({
+		Name = 'AntiEject',
+		Function = function(callback)
+			if callback then
+				local old, seat
+				AntiEject:Clean(runService.Heartbeat:Connect(function()
+					if entitylib.isAlive and entitylib.character.Humanoid.Sit and lplr.Team ~= teams.Police then
+						task.defer(function()
+							local packet = jb.VehicleController.GetLocalVehiclePacket()
+							seat = packet and packet.Seat or nil
+	
+							if seat and seat.AssemblyLinearVelocity.Magnitude < 100 then
+								old = seat.AssemblyLinearVelocity
+								seat.AssemblyLinearVelocity += Vector3.new(0, -200, 0)
+							else
+								old = nil
+							end
+						end)
+					end
+				end))
+	
+				AntiEject:Clean(runService.RenderStepped:Connect(function()
+					if seat and old then
+						seat.AssemblyLinearVelocity = old
+					end
+				end))
+			end
+		end,
+		Tooltip = 'Prevent police from forcing you out of your vehicle.'
+	})
+end)
+
+run(function()
 	local AntiNPC
 	
 	AntiNPC = vape.Categories.Blatant:CreateModule({
@@ -1397,11 +1444,10 @@ run(function()
 							})
 	
 							for _, entity in entities do
-								if entity.Player and isIllegal(entity) then
-									if entity.Character:GetAttribute('InVehicle') then
-										if not seat and cooldown < os.clock() then
-											seat = getVehicleSeat(entity)
-										end
+								if entity.Player and isIllegal(entity) and entity.VehicleState then
+									if getCachedEntitySeat(entity) and cooldown < os.clock() then
+										seat = entity.Seat
+										break
 									end
 								end
 							end
