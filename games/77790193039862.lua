@@ -266,13 +266,13 @@ run(function()
 		Name = 'Reach',
 		Function = function(callback)
 			if callback then
-	            old = debug.getupvalue(oldhit or arena.Client.startHit, 4)
-	            debug.setupvalue(oldhit or arena.Client.startHit, 4, old + Value.Value)
+				old = debug.getupvalue(oldhit or arena.Client.startHit, 4)
+				debug.setupvalue(oldhit or arena.Client.startHit, 4, old + Value.Value)
 			else
-	            if old then
-	                debug.setupvalue(oldhit or arena.Client.startHit, 4, old)
-	                old = nil
-	            end
+				if old then
+					debug.setupvalue(oldhit or arena.Client.startHit, 4, old)
+					old = nil
+				end
 			end
 		end,
 		Tooltip = 'Extends attack reach'
@@ -281,9 +281,9 @@ run(function()
 		Name = 'Range',
 		Min = 0,
 		Max = 6,
-	    Default = 6,
+		Default = 6,
 		Decimal = 10,
-	    Function = function(val)
+		Function = function(val)
 			if Reach.Enabled then
 				debug.setupvalue(oldhit or arena.Client.startHit, 4, old + val)
 			end
@@ -323,7 +323,7 @@ run(function()
 	local function velocityFunction(...)
 		if rand:NextNumber(0, 100) > Chance.Value then return old(...) end
 	
-	    local data = ...
+		local data = ...
 		local check = (not Targeting.Enabled) or entitylib.EntityPosition({
 			Range = 50,
 			Part = 'RootPart',
@@ -940,10 +940,10 @@ run(function()
 	local AutoJump
 	
 	Speed = vape.Categories.Blatant:CreateModule({
-	    Name = 'Speed',
-	    Function = function(callback)
-	        if callback then
-	            Speed:Clean(runService.PreSimulation:Connect(function()
+		Name = 'Speed',
+		Function = function(callback)
+			if callback then
+				Speed:Clean(runService.PreSimulation:Connect(function()
 					if not Fly.Enabled and not LongJump.Enabled then
 						local movedir = calculateMoveVector() * Value.Value
 						local onground = debug.getupvalue(arena.MoveFunction, 4)
@@ -952,9 +952,9 @@ run(function()
 						debug.setupvalue(arena.TickFunction, 6, Vector3.new(movedir.X, AutoJump.Enabled and onground and movedir.Magnitude > 0 and 20 or velocity.Y, movedir.Z))
 					end
 				end))
-	        end
-	    end,
-	    Tooltip = 'Increases your movement with various methods.'
+			end
+		end,
+		Tooltip = 'Increases your movement with various methods.'
 	})
 	Value = Speed:CreateSlider({
 		Name = 'Speed',
@@ -1081,9 +1081,9 @@ run(function()
 		Name = 'Delay',
 		Min = 0,
 		Max = 0.2,
-	    Default = 0,
+		Default = 0,
 		Decimal = 100,
-	    Function = function(val)
+		Function = function(val)
 			if FastPlace.Enabled then
 				debug.setupvalue(arena.Client.startPlaceHold, 7, math.max(val, 0.001))
 			end

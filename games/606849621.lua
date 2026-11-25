@@ -59,6 +59,7 @@ local LazerGodmode = {Enabled = false}
 local InvTracker = {Inventories = {}, Connections = {}}
 local oldBulletUpdate
 local aimTimer, shootTimer, aimVec = os.clock(), os.clock()
+local getInCallback
 
 local function getTableSize(dict)
 	local size = 0
@@ -366,7 +367,20 @@ run(function()
 		entity.Seat = isInVehicle and entity.Seat or nil
 		entity.VehicleState = isInVehicle
 		entity.InVehicle = not entity.Character:GetAttribute('HasHandcuffs') and (isInVehicle or entity.InVehicle)
+		entity.Tazed = entity.Character:FindFirstChild('RagdollNeck') and true or false
 		entity.Illegal = isIllegal(entity, true)
+
+		table.insert(entity.Connections, entity.Character.ChildAdded:Connect(function(obj)
+			if obj.Name == 'RagdollNeck' then
+				entity.Tazed = true
+			end
+		end))
+
+		table.insert(entity.Connections, entity.Character.ChildRemoved:Connect(function(obj)
+			if obj.Name == 'RagdollNeck' then
+				entity.Tazed = false
+			end
+		end))
 
 		return {
 			hum:GetPropertyChangedSignal('Health'),
@@ -704,7 +718,8 @@ run(function()
 		replicatedStorage.Game.Item.Donut,
 		replicatedStorage.Game.Item.Gun,
 		replicatedStorage.Game.Falling,
-		lplr.PlayerScripts.LocalScript
+		lplr.PlayerScripts.LocalScript,
+		replicatedStorage.Game.Paraglide
 	}, {
 		Action3 = 'Pickup',
 		beginArrestHold = 'ArrestBegin',
@@ -740,6 +755,7 @@ run(function()
 
 		if InfNitro.Enabled and remote == 'UseNitro' then return end
 		if LazerGodmode.Enabled and remote == 'SelfDamage' then return end
+		if remote == 'GetIn' and getInCallback then getInCallback() end
 		if remote ~= 'LookAngle' and remote ~= 'AimPosition' and shared.VapeDeveloper then
 			local called = getfenv(3)
 			called = called and called.script
@@ -890,7 +906,7 @@ run(function()
 	end
 
 	function Spring:Update(DeltaTime)
-		local IterationsThisFrame = DeltaTime / ((1 / 60) / 8)
+		local IterationsThisFrame = 8
 		local ScaledDeltaTime = DeltaTime * self.Speed / IterationsThisFrame
 
 		for i = 1, math.round(IterationsThisFrame) do
@@ -1587,13 +1603,6 @@ run(function()
 	local Range
 	local cooldown = 0
 	
-	local function equipTool(tool)
-		local obj = jb.InventoryItemBinder:Get(tool)
-		if obj then
-			obj:AttemptSelect()
-		end
-	end
-	
 	AutoPickpocket = vape.Categories.Blatant:CreateModule({
 		Name = 'AutoPickpocket',
 		Function = function(callback)
@@ -1767,7 +1776,6 @@ run(function()
 	local AutoTaze
 	local Range
 	local HandCheck
-	local VehicleCheck
 	local CooldownBar
 	local cdholder, cdframe, cdlabel
 	
@@ -1816,14 +1824,16 @@ run(function()
 							local entities = entitylib.AllPosition({
 								Players = true,
 								Part = 'RootPart',
-								Range = Range.Value,
+								Range = Range.ValueMax,
 								Wallcheck = true,
 								Arrest = true
 							})
 	
 							if (taser:GetAttribute('NextUse') or 0) < os.clock() then
+								local localPos = entitylib.character.RootPart.Position
+	
 								for _, entity in entities do
-									if isIllegal(entity) and (entity.VehicleTimer or 0) < os.clock() and not ((VehicleCheck.Enabled and entity.Character:GetAttribute('InVehicle')) or entity.Head.CanCollide) then
+									if isIllegal(entity) and (not (entity.VehicleState or entity.Tazed)) and (entity.VehicleTimer or 0) < os.clock() and (entity.RootPart.Position - localPos).Magnitude > Range.ValueMin then
 										local lastEquipped
 										if not isTaser then
 											lastEquipped = jb.ItemSystemController:GetLocalEquipped()
@@ -1877,22 +1887,18 @@ run(function()
 		end,
 		Tooltip = 'Immobilizes entities around you'
 	})
-	Range = AutoTaze:CreateSlider({
-		Name = 'Range',
+	Range = AutoTaze:CreateTwoSlider({
+		Name = 'Taze Range',
 		Min = 0,
 		Max = 75,
-		Default = 75,
+		DefaultMin = 20,
+		DefaultMax = 75,
 		Suffix = function(val)
 			return val == 1 and 'stud' or 'studs'
 		end
 	})
 	HandCheck = AutoTaze:CreateToggle({
 		Name = 'Hand Check'
-	})
-	VehicleCheck = AutoTaze:CreateToggle({
-		Name = 'Vehicle Check',
-		Tooltip = 'Avoid tazing players in vehicles (RECOMMENDED)',
-		Default = true
 	})
 	CooldownBar = AutoTaze:CreateToggle({
 		Name = 'Cooldown Bar',
@@ -1931,6 +1937,130 @@ run(function()
 			end
 		end,
 		Tooltip = 'Show the cooldown for tazing'
+	})
+end)
+
+run(function()
+	local Disabler
+	local Speed
+	local FlyDis
+	local state = false
+	
+	local function AddGlider(glider)
+		if not glider then return end
+		for _, v in glider:QueryDescendants('BasePart') do
+			v.Transparency = 1
+		end
+	
+		Disabler:Clean(glider.DescendantAdded:Connect(function(v)
+			if v:IsA('BasePart') then
+				v.Transparency = 1
+			end
+		end))
+	end
+	
+	local function LocalAdded(char)
+		Disabler:Clean(char.Character.ChildAdded:Connect(function(obj)
+			if obj.Name == 'Glider' then
+				AddGlider(obj)
+			end
+		end))
+	
+		Disabler:Clean(char.Humanoid.Animator.AnimationPlayed:Connect(function(track)
+			if track.Animation.AnimationId == 'rbxassetid://1678614837' then
+				track:Stop()
+			end
+		end))
+	
+		for _, track in char.Humanoid.Animator:GetPlayingAnimationTracks() do
+			if track.Animation.AnimationId == 'rbxassetid://1678614837' then
+				track:Stop()
+			end
+		end
+	
+		AddGlider(char.Character:FindFirstChild('Glider'))
+	end
+	
+	Disabler = vape.Categories.Blatant:CreateModule({
+		Name = 'Disabler',
+		Function = function(callback)
+			if callback then
+				local cd = os.clock()
+	
+				if Speed.Enabled then
+					getInCallback = function()
+						jb:FireServer('GliderStop')
+					end
+	
+					Disabler:Clean(entitylib.Events.LocalAdded:Connect(LocalAdded))
+					if entitylib.isAlive then
+						task.spawn(LocalAdded, entitylib.character)
+					end
+	
+					task.spawn(function()
+						repeat
+							if entitylib.isAlive and not (entitylib.character.Sit or lplr.Character:FindFirstChild('Glider')) then
+								jb:FireServer('Glider')
+							end
+	
+							task.wait(0.1)
+						until not (Disabler.Enabled and Speed.Enabled)
+					end)
+				end
+	
+				if FlyDis.Enabled then
+					repeat
+						if entitylib.isAlive then
+							local newState = cd > os.clock() or vape.Modules.Fly.Enabled
+	
+							if state ~= newState then
+								if newState then
+									jb:FireServer('StartRagdolling')
+									cd = os.clock() + 0.1
+								else
+									jb:FireServer('Heartbeat')
+								end
+	
+								state = newState
+							end
+						end
+	
+						task.wait()
+					until not (Disabler.Enabled and FlyDis.Enabled)
+				end
+			else
+				if state then
+					jb:FireServer('Heartbeat')
+					state = false
+				end
+	
+				if getInCallback then
+					jb:FireServer('GliderStop')
+					getInCallback = nil
+				end
+			end
+		end,
+		Tooltip = 'Uses certain methods to weaken anticheat checks.'
+	})
+	Speed = Disabler:CreateToggle({
+		Name = 'Speed',
+		Default = true,
+		Function = function()
+			if Disabler.Enabled then
+				Disabler:Toggle()
+				Disabler:Toggle()
+			end
+		end
+	})
+	FlyDis = Disabler:CreateToggle({
+		Name = 'Fly',
+		Default = true,
+		Function = function()
+			if Disabler.Enabled then
+				Disabler:Toggle()
+				Disabler:Toggle()
+			end
+		end
 	})
 end)
 
@@ -2108,11 +2238,39 @@ run(function()
 	local Automatic
 	local EquipTime
 	local VehicleWallbang
-	local Headshot
+	local FireRate
 	local Hitscan
 	local oldhit
 	local oldequip
+	local olddecrement
 	local olddata = {}
+	
+	local function FireRateHook(...)
+		local res = table.pack(olddecrement(...))
+		local self = ...
+	
+		if not self.IsReloading and self.Config.IgnoreVerifyFireFreq and (1 / self.Config.FireFreq) > 0.25 then
+			task.delay(0.25, function()
+				local obj = jb.InventoryItemBinder:Get(self.inventoryItemValue)
+	
+				if obj and not self.Destroyed then
+					local fireState = self.Config.FireAuto and self.IsShooting
+	
+					obj:AttemptSelect()
+					obj:AttemptSelect()
+	
+					if fireState then
+						local equipped = jb.ItemSystemController:GetLocalEquipped()
+						if equipped.BulletEmitter then
+							equipped.IsShooting = true
+						end
+					end
+				end
+			end)
+		end
+	
+		return unpack(res, 1, res.n)
+	end
 	
 	local function ModifyGun(gun)
 		if gun and gun.LastReplicateMousePosition then
@@ -2164,13 +2322,11 @@ run(function()
 					end)
 				end
 	
-				--[[if Headshot.Enabled then
-					oldhit = hookfunction(jb.GunController.BulletEmitterOnLocalHitPlayer, function(...)
-						local shotData = select(15, ...)
-						shotData.isHeadshot = true
-						return oldhit(...)
+				if FireRate.Enabled then
+					olddecrement = hookfunction(jb.GunController.DecrementAmmo, function(...)
+						return FireRateHook(...)
 					end)
-				end]]
+				end
 	
 				if EquipTime.Enabled then
 					oldequip = hookfunction(jb.GunUtils.getShouldAddEquipTime, function()
@@ -2200,6 +2356,11 @@ run(function()
 				if oldequip then
 					restorefunction(jb.GunUtils.getShouldAddEquipTime)
 					oldequip = nil
+				end
+	
+				if olddecrement then
+					restorefunction(jb.GunController.DecrementAmmo)
+					olddecrement = nil
 				end
 	
 				for config, data in olddata do
@@ -2239,16 +2400,16 @@ run(function()
 		Function = ApplyMods,
 		Tooltip = 'Allow you to shoot through vehicles.'
 	})
-	--[[Headshot = GunModifications:CreateToggle({
-		Name = 'Always Headshot',
+	FireRate = GunModifications:CreateToggle({
+		Name = 'Fire Rate',
 		Function = function()
 			if GunModifications.Enabled then
 				GunModifications:Toggle()
 				GunModifications:Toggle()
 			end
 		end,
-		Tooltip = 'Force headshot damage when hitting any body part'
-	})]]
+		Tooltip = 'Decrease fire cooldown on shotgun.'
+	})
 	Hitscan = GunModifications:CreateToggle({
 		Name = 'Hitscan Bullets',
 		Function = function()
@@ -2267,7 +2428,8 @@ run(function()
 	local whitelist = {
 		BarbedWire = true,
 		Part = true,
-		Lavatouch = true
+		Lavatouch = true,
+		Light = true
 	}
 	
 	LazerGodmode = vape.Categories.Blatant:CreateModule({
@@ -2826,6 +2988,61 @@ run(function()
 end)
 
 run(function()
+	local AutoEvict
+	local Whitelist
+	
+	AutoEvict = vape.Categories.Utility:CreateModule({
+		Name = 'AutoEvict',
+		Function = function(callback)
+			if callback then
+				repeat
+					local packet = jb.VehicleController.GetLocalVehiclePacket()
+					if packet and packet.Model then
+						for _, part in packet.Model:GetChildren() do
+							if part.Name == 'Passenger' then
+								local pname = part:FindFirstChild('PlayerName')
+	
+								if pname.Value ~= '' and not table.find(Whitelist.ListEnabled, pname.Value) then
+									jb.VehicleController.attemptPassengerEject(pname.Value)
+								end
+							end
+						end
+					end
+	
+					task.wait(0.2)
+				until not AutoEvict.Enabled
+			end
+		end,
+		Tooltip = 'Automatically eject non-whitelisted players out of your vehicle.'
+	})
+	Whitelist = AutoEvict:CreateTextList({
+		Name = 'Whitelist',
+		Player = true
+	})
+end)
+
+run(function()
+	local AutoLock
+	
+	AutoLock = vape.Categories.Utility:CreateModule({
+		Name = 'AutoLock',
+		Function = function(callback)
+			if callback then
+				repeat
+					local packet = jb.VehicleController.GetLocalVehiclePacket()
+					if packet and packet.Model and packet.Model:GetAttribute('Locked') ~= true then
+						jb.VehicleController.toggleLocalLocked()
+					end
+	
+					task.wait(0.2)
+				until not AutoLock.Enabled
+			end
+		end,
+		Tooltip = 'Automatically lock your vehicle.'
+	})
+end)
+
+run(function()
 	local oldnitro
 	
 	InfNitro = vape.Categories.Utility:CreateModule({
@@ -2858,7 +3075,7 @@ run(function()
 			if callback then
 				old = hookfunction(jb.CircleAction.Press, function(...)
 					local action = jb.CircleAction.Spec
-					if action and action.Timed and not (action.ReleaseCallback or action.ShouldArrest or action.ShouldBreakout or action.ShouldHotwire or await) then
+					if action and action.Timed and not (action.ReleaseCallback or action.ShouldArrest or action.ShouldBreakout or action.ShouldHotwire or action.Name == 'Break In' or await) then
 						local old = action.Timed
 	
 						action.Timed = false
@@ -3053,6 +3270,10 @@ run(function()
 						return {}
 					end
 				})
+	
+				for _, obj in lplr.PlayerGui:QueryDescendants('GuiBase2d') do
+					obj.AutoLocalize = false
+				end
 	
 				for _, obj in collectionService:GetTagged('DestructibleSpawn') do
 					addInstance(obj)

@@ -611,6 +611,7 @@ function vape:CreateNotification(title, text, duration, type)
 		icon.Position = UDim2.fromOffset(-1, -1)
 		icon.Parent = iconshadow
 		local label = Instance.new('TextLabel')
+		label.AutoLocalize = false
 		label.BackgroundTransparency = 1
 		label.FontFace = uipallet.FontSemiBold
 		label.Position = UDim2.fromOffset(46, 16)
@@ -623,7 +624,7 @@ function vape:CreateNotification(title, text, duration, type)
 		label.TextYAlignment = Enum.TextYAlignment.Top
 		label.ZIndex = 5
 		label.Parent = notification
-		local textshadow = label:Clone()
+		local textshadow = Instance.fromExisting(label)
 		textshadow.FontFace = uipallet.Font
 		textshadow.Position = UDim2.fromOffset(47, 44)
 		textshadow.RichText = false
@@ -632,7 +633,7 @@ function vape:CreateNotification(title, text, duration, type)
 		textshadow.TextTransparency = 0.5
 		textshadow.Parent = notification
 		notification.Size = UDim2.fromOffset(math.max(getfontbounds(textshadow.Text, 14, uipallet.Font).X + 80, 266), 75)
-		local textlabel = textshadow:Clone()
+		local textlabel = Instance.fromExisting(textshadow)
 		textlabel.Position = UDim2.fromOffset(-1, -1)
 		textlabel.RichText = true
 		textlabel.Text = text
@@ -1703,7 +1704,7 @@ function vape:LoadGUI()
 				if LabelCustom.Visible then
 					local size = getfontbounds(LabelCustom.ContentText, LabelCustom.TextSize, LabelCustom.FontFace)
 					LabelCustom.Size = UDim2.fromOffset(size.X, size.Y)
-					LabelCustom.Position = UDim2.new(isRight and 1 / Scale.Scale or 0, isRight and -size.X or 0, 0, (Logo.Visible and 32 or 8))
+					LabelCustom.Position = UDim2.new(isRight and 1 / Scale.Scale or 0, isRight and -size.X or 0, 0, (Logo.Visible and 34 or 8))
 				end
 		
 				local Previous = {}
@@ -1770,6 +1771,7 @@ function vape:LoadGUI()
 						end
 		
 						local label = Instance.new('TextLabel')
+						label.AutoLocalize = false
 						label.BackgroundTransparency = 1
 						label.BorderSizePixel = 0
 						label.FontFace = FontOption.Value
@@ -1782,7 +1784,7 @@ function vape:LoadGUI()
 						label.Size = UDim2.fromOffset(size.X, size.Y)
 		
 						if Shadow.Enabled then
-							local shadowlabel = label:Clone()
+							local shadowlabel = Instance.fromExisting(label)
 							shadowlabel.Position = UDim2.fromOffset(label.Position.X.Offset + 1, label.Position.Y.Offset + 1)
 							shadowlabel.Text = label.ContentText
 							shadowlabel.TextColor3 = Color3.new()
@@ -1869,7 +1871,7 @@ function vape:LoadGUI()
 		function TextGUI:UpdateColor(hue, sat, val, default)
 			LogoGradient.Color = ColorSequence.new({
 				ColorSequenceKeypoint.new(0, Color3.fromHSV(hue, sat, val)),
-				ColorSequenceKeypoint.new(1, Gradient.Enabled and Color3.fromHSV(vape:Color((hue - 0.075) % 1)) or Color3.fromHSV(hue, sat, val))
+				ColorSequenceKeypoint.new(1, Gradient.Enabled and Color3.fromHSV(vape:Color((hue - 0.05) % 1)) or Color3.fromHSV(hue, sat, val))
 			})
 			LogoGradient2.Color = Gradient.Enabled and GradientV4.Enabled and LogoGradient.Color or ColorSequence.new({
 				ColorSequenceKeypoint.new(0, Color3.new(1, 1, 1)),
