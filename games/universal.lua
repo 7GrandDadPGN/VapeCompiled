@@ -2565,9 +2565,12 @@ end)
 
 run(function()
 	local Invisible
+	local Dynamic
 	local oldcf
 	local animtrack
 	local proper = true
+	local params = RaycastParams.new()
+	params.RespectCanCollide = true
 	
 	local function animationTrickery()
 		if entitylib.isAlive then
@@ -2605,15 +2608,39 @@ run(function()
 				end)
 	
 				Invisible:Clean(runService.Heartbeat:Connect(function(dt)
-					if entitylib.isAlive then
-						local isR15 = entitylib.character.Humanoid.RigType == Enum.HumanoidRigType.R15
-						local root = entitylib.character.RootPart
-						local cf = root.CFrame - Vector3.new(0, entitylib.character.Humanoid.HipHeight + (root.Size.Y / 2) - 1, 0)
-						oldcf = root.CFrame
+					task.defer(function()
+						if entitylib.isAlive then
+							local hum = entitylib.character.Humanoid
+							local root = entitylib.character.RootPart
+							local isR15 = hum.RigType == Enum.HumanoidRigType.R15
+							local offset = isR15 and hum.HipHeight + (root.Size.Y / 2) or 0
 	
-						root.CFrame = cf * CFrame.Angles(math.rad(isR15 and 180 or 90), 0, 0)
-						animtrack:AdjustWeight(100)
-					end
+							if hum.Sit then
+								oldcf = nil
+								return
+							end
+	
+							if isR15 then
+								if Dynamic.Enabled then
+									params.FilterDescendantsInstances = {lplr.Character, gameCamera}
+									params.CollisionGroup = root.CollisionGroup
+	
+									local ray = workspace:Blockcast(root.CFrame, Vector3.new(2, 0.1, 1), Vector3.new(0, -offset, 0), params)
+									if ray then
+										offset = (root.Position.Y - ray.Position.Y) - 1
+									else
+										offset = 0
+									end
+								else
+									offset -= 1
+								end
+							end
+	
+							oldcf = root.CFrame
+							root.CFrame = (root.CFrame - Vector3.new(0, offset, 0)) * CFrame.Angles(math.rad(isR15 and 180 or 90), 0, 0)
+							animtrack:AdjustWeight(100)
+						end
+					end)
 				end))
 	
 				Invisible:Clean(entitylib.Events.LocalAdded:Connect(function(char)
@@ -2636,6 +2663,11 @@ run(function()
 			end
 		end,
 		Tooltip = 'Turns you invisible using animations.'
+	})
+	Dynamic = Invisible:CreateToggle({
+		Name = 'Dynamic',
+		Tooltip = 'Dynamically adjust your position to be as close to the ground as possible.',
+		Default = true
 	})
 end)
 

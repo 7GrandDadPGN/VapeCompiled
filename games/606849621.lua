@@ -692,6 +692,7 @@ run(function()
 		PlayerUtils = require(replicatedStorage.Game.PlayerUtils),
 		PlasmaController = require(replicatedStorage.Game.Item.PlasmaGun),
 		TeamChooseController = require(replicatedStorage.TeamSelect.TeamChooseUI),
+		Turret = require(replicatedStorage.Turret2.Turret),
 		VehicleController = require(replicatedStorage.Vehicle.VehicleUtils),
 		VehicleSystem = require(replicatedStorage.Game.VehicleSystem)
 	}
@@ -756,7 +757,7 @@ run(function()
 		if InfNitro.Enabled and remote == 'UseNitro' then return end
 		if LazerGodmode.Enabled and remote == 'SelfDamage' then return end
 		if remote == 'GetIn' and getInCallback then getInCallback() end
-		if remote ~= 'LookAngle' and remote ~= 'AimPosition' and shared.VapeDeveloper then
+		if remote ~= 'LookAngle' and shared.VapeDeveloper then
 			local called = getfenv(3)
 			called = called and called.script
 			if called and (not remote) then
@@ -2239,18 +2240,20 @@ run(function()
 	local EquipTime
 	local VehicleWallbang
 	local FireRate
+	local DoubleTap
 	local Hitscan
 	local oldhit
 	local oldequip
 	local olddecrement
 	local olddata = {}
+	local lastShot = os.clock()
 	
 	local function FireRateHook(...)
 		local res = table.pack(olddecrement(...))
 		local self = ...
 	
 		if not self.IsReloading and self.Config.IgnoreVerifyFireFreq and (1 / self.Config.FireFreq) > 0.25 then
-			task.delay(0.25, function()
+			local function doBypass()
 				local obj = jb.InventoryItemBinder:Get(self.inventoryItemValue)
 	
 				if obj and not self.Destroyed then
@@ -2266,7 +2269,16 @@ run(function()
 						end
 					end
 				end
-			end)
+			end
+	
+			if DoubleTap.Enabled then
+				if (os.clock() - lastShot) >= 0.5 then
+					task.defer(doBypass)
+					lastShot = os.clock()
+				end
+			else
+				task.delay(0.25, doBypass)
+			end
 		end
 	
 		return unpack(res, 1, res.n)
@@ -2283,6 +2295,10 @@ run(function()
 	
 			if gun.Config.BulletSpread then
 				gun.Config.BulletSpread = Spread.Enabled and 0 or olddata[gun.Config].BulletSpread
+			end
+	
+			if gun.__ClassName == 'PlasmaPistol' and FireRate.Enabled then
+				gun.Config.FireFreq = olddata[gun.Config].FireFreq * 5
 			end
 	
 			local vehicleIndex = table.find(gun.BulletEmitter.IgnoreList, workspace.Vehicles)
@@ -2402,13 +2418,20 @@ run(function()
 	})
 	FireRate = GunModifications:CreateToggle({
 		Name = 'Fire Rate',
-		Function = function()
+		Function = function(callback)
+			DoubleTap.Object.Visible = callback
 			if GunModifications.Enabled then
 				GunModifications:Toggle()
 				GunModifications:Toggle()
 			end
 		end,
-		Tooltip = 'Decrease fire cooldown on shotgun.'
+		Tooltip = 'Decrease fire cooldown on shotgun & plasma pistol.'
+	})
+	DoubleTap = GunModifications:CreateToggle({
+		Name = 'Double Tap',
+		Tooltip = 'Change Fire Rate into a two shot burst fire.',
+		Visible = false,
+		Darker = true
 	})
 	Hitscan = GunModifications:CreateToggle({
 		Name = 'Hitscan Bullets',
@@ -2463,6 +2486,8 @@ run(function()
 	
 				table.clear(modified)
 			end
+	
+			debug.setconstant(jb.Turret.Update, 33, callback and '_Target' or 'Target')
 		end,
 		Tooltip = 'Allow you to ignore specific damage sources'
 	})
@@ -2646,6 +2671,18 @@ run(function()
 		{
 			Vector3.new(1748.897, 23.896, -4006.368),
 			Vector3.new(1751.896, 23.896, -4006.417)
+		},
+		{
+			Vector3.new(-1043.613, 17.799, -1512.907),
+			Vector3.new(-1043.510, 17.799, -1517.906)
+		},
+		{
+			Vector3.new(-1028.592, 18.849, -1485.016),
+			Vector3.new(-1023.094, 18.849, -1484.873)
+		},
+		{
+			Vector3.new(-1084.698, 18.849, -1447.521),
+			Vector3.new(-1084.713, 18.849, -1442.021)
 		}
 	}
 	
@@ -3018,6 +3055,67 @@ run(function()
 	Whitelist = AutoEvict:CreateTextList({
 		Name = 'Whitelist',
 		Player = true
+	})
+end)
+
+run(function()
+	local AutoKeypad
+	
+	local function doSolve()
+		for _, holder in workspace.Casino.RobberyDoor.Codes:GetChildren() do
+			local label = holder:FindFirstChildWhichIsA('TextLabel', true)
+			if label and label.Text ~= '' then
+				for _, primary in holder:GetChildren() do
+					local sortList = {}
+					for _, comp in holder:GetChildren() do
+						local diff = primary.CFrame:ToObjectSpace(comp.CFrame).Position.X
+	
+						if diff > 0 then
+							table.clear(sortList)
+							break
+						else
+							table.insert(sortList, {comp, diff})
+						end
+					end
+	
+					table.sort(sortList, function(a, b)
+						return a[2] > b[2]
+					end)
+	
+					if #sortList > 0 then
+						local finalCode = ''
+						for _, code in sortList do
+							local button = code[1]:FindFirstChildWhichIsA('TextLabel', true)
+							button = button and lplr.PlayerGui.AppUI.CasinoKeypad.Buttons:FindFirstChild(button.Text == '0' and '11' or button.Text) or nil
+	
+							if button then
+								firesignal(button.Activated)
+							end
+						end
+					end
+				end
+	
+				break
+			end
+		end
+	end
+	
+	AutoKeypad = vape.Categories.Utility:CreateModule({
+		Name = 'AutoKeypad',
+		Function = function(callback)
+			if callback then
+				AutoKeypad:Clean(lplr.PlayerGui.AppUI.ChildAdded:Connect(function(obj)
+					if obj.Name == 'CasinoKeypad' then
+						task.defer(doSolve)
+					end
+				end))
+	
+				if lplr.PlayerGui.AppUI:FindFirstChild('CasinoKeypad') then
+					doSolve()
+				end
+			end
+		end,
+		Tooltip = 'Automatically solve the keypad inside of the casino.'
 	})
 end)
 
