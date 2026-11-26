@@ -693,6 +693,7 @@ run(function()
 		PlasmaController = require(replicatedStorage.Game.Item.PlasmaGun),
 		TeamChooseController = require(replicatedStorage.TeamSelect.TeamChooseUI),
 		Turret = require(replicatedStorage.Turret2.Turret),
+		UI = require(replicatedStorage.Module.UI),
 		VehicleController = require(replicatedStorage.Vehicle.VehicleUtils),
 		VehicleSystem = require(replicatedStorage.Game.VehicleSystem)
 	}
@@ -1987,6 +1988,7 @@ run(function()
 		Function = function(callback)
 			if callback then
 				local cd = os.clock()
+				local extraCd = os.clock()
 	
 				if Speed.Enabled then
 					getInCallback = function()
@@ -2013,6 +2015,14 @@ run(function()
 					repeat
 						if entitylib.isAlive then
 							local newState = cd > os.clock() or vape.Modules.Fly.Enabled
+	
+							if not isnetworkowner(entitylib.character.RootPart) and extraCd < os.clock() then
+								if newState then
+									jb:FireServer('Heartbeat')
+									jb:FireServer('StartRagdolling')
+									extraCd = os.clock() + 0.1
+								end
+							end
 	
 							if state ~= newState then
 								if newState then
@@ -3059,9 +3069,46 @@ run(function()
 end)
 
 run(function()
-	local AutoKeypad
+	local AutoLock
 	
-	local function doSolve()
+	AutoLock = vape.Categories.Utility:CreateModule({
+		Name = 'AutoLock',
+		Function = function(callback)
+			if callback then
+				repeat
+					local packet = jb.VehicleController.GetLocalVehiclePacket()
+					if packet and packet.Model and packet.Model:GetAttribute('Locked') ~= true then
+						jb.VehicleController.toggleLocalLocked()
+					end
+	
+					task.wait(0.2)
+				until not AutoLock.Enabled
+			end
+		end,
+		Tooltip = 'Automatically lock your vehicle.'
+	})
+end)
+
+run(function()
+	local AutoSolve
+	local CasinoKeypad
+	local CasinoVault
+	
+	local function addVaultPuzzle(door)
+		local light = door:WaitForChild('InnerModel', 10):WaitForChild('LightPtr', 10).Value
+		local base = door:WaitForChild('Part', 10)
+	
+		if light and base and AutoSolve.Enabled then
+			AutoSolve:Clean(light:GetPropertyChangedSignal('Color'):Connect(function()
+				if light.Color ~= Color3.new(1, 0, 0) and entitylib.isAlive and (entitylib.character.RootPart.Position - base.Position).Magnitude < 12 then
+					task.spawn(jb.UI.CircleAction.Press)
+					task.spawn(jb.UI.CircleAction.Release)
+				end
+			end))
+		end
+	end
+	
+	local function solveCasinoKeypad()
 		for _, holder in workspace.Casino.RobberyDoor.Codes:GetChildren() do
 			local label = holder:FindFirstChildWhichIsA('TextLabel', true)
 			if label and label.Text ~= '' then
@@ -3083,7 +3130,6 @@ run(function()
 					end)
 	
 					if #sortList > 0 then
-						local finalCode = ''
 						for _, code in sortList do
 							local button = code[1]:FindFirstChildWhichIsA('TextLabel', true)
 							button = button and lplr.PlayerGui.AppUI.CasinoKeypad.Buttons:FindFirstChild(button.Text == '0' and '11' or button.Text) or nil
@@ -3091,6 +3137,10 @@ run(function()
 							if button then
 								firesignal(button.Activated)
 							end
+						end
+	
+						if #sortList == 4 then
+							firesignal(lplr.PlayerGui.AppUI.CasinoKeypad.Buttons['12'].Activated)
 						end
 					end
 				end
@@ -3100,43 +3150,53 @@ run(function()
 		end
 	end
 	
-	AutoKeypad = vape.Categories.Utility:CreateModule({
-		Name = 'AutoKeypad',
+	AutoSolve = vape.Categories.Utility:CreateModule({
+		Name = 'AutoSolve',
 		Function = function(callback)
 			if callback then
-				AutoKeypad:Clean(lplr.PlayerGui.AppUI.ChildAdded:Connect(function(obj)
-					if obj.Name == 'CasinoKeypad' then
-						task.defer(doSolve)
-					end
-				end))
+				if CasinoKeypad.Enabled then
+					AutoSolve:Clean(lplr.PlayerGui.AppUI.ChildAdded:Connect(function(obj)
+						if obj.Name == 'CasinoKeypad' then
+							task.defer(solveCasinoKeypad)
+						end
+					end))
 	
-				if lplr.PlayerGui.AppUI:FindFirstChild('CasinoKeypad') then
-					doSolve()
+					if lplr.PlayerGui.AppUI:FindFirstChild('CasinoKeypad') then
+						task.spawn(solveCasinoKeypad)
+					end
+				end
+	
+				if CasinoVault.Enabled then
+					AutoSolve:Clean(collectionService:GetInstanceAddedSignal('VaultDoorPuzzle'):Connect(addVaultPuzzle))
+					for _, obj in collectionService:GetTagged('VaultDoorPuzzle') do
+						task.spawn(addVaultPuzzle, obj)
+					end
 				end
 			end
 		end,
-		Tooltip = 'Automatically solve the keypad inside of the casino.'
+		Tooltip = 'Automatically solve certain robbery actions.'
 	})
-end)
-
-run(function()
-	local AutoLock
-	
-	AutoLock = vape.Categories.Utility:CreateModule({
-		Name = 'AutoLock',
-		Function = function(callback)
-			if callback then
-				repeat
-					local packet = jb.VehicleController.GetLocalVehiclePacket()
-					if packet and packet.Model and packet.Model:GetAttribute('Locked') ~= true then
-						jb.VehicleController.toggleLocalLocked()
-					end
-	
-					task.wait(0.2)
-				until not AutoLock.Enabled
+	CasinoKeypad = AutoSolve:CreateToggle({
+		Name = 'Casino Keypad',
+		Function = function()
+			if AutoSolve.Enabled then
+				AutoSolve:Toggle()
+				AutoSolve:Toggle()
 			end
 		end,
-		Tooltip = 'Automatically lock your vehicle.'
+		Default = true,
+		Tooltip = 'Automatically fill and enter in the correct code at the casino keypad door.'
+	})
+	CasinoVault = AutoSolve:CreateToggle({
+		Name = 'Casino Vault',
+		Function = function()
+			if AutoSolve.Enabled then
+				AutoSolve:Toggle()
+				AutoSolve:Toggle()
+			end
+		end,
+		Default = true,
+		Tooltip = 'Automatically complete the crack minigame at the casino vault doors.'
 	})
 end)
 
