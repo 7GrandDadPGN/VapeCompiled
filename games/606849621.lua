@@ -677,6 +677,7 @@ run(function()
 	end
 
 	jb = {
+		ActionButtonService = require(replicatedStorage.ActionButton.ActionButtonService),
 		AlexChassis = require(replicatedStorage.Module.AlexChassis),
 		Audio = require(replicatedStorage.Std.Audio),
 		Boat = require(replicatedStorage.Game.Boat.Boat),
@@ -689,8 +690,9 @@ run(function()
 		InventoryItemSystem = require(replicatedStorage.Inventory.InventoryItemSystem),
 		ItemSystemController = require(replicatedStorage.Game.ItemSystem.ItemSystem),
 		LightningUtils = require(replicatedStorage.Game.LightningUtils),
-		PlayerUtils = require(replicatedStorage.Game.PlayerUtils),
 		PlasmaController = require(replicatedStorage.Game.Item.PlasmaGun),
+		PlayerUtils = require(replicatedStorage.Game.PlayerUtils),
+		PuzzleFlow = require(replicatedStorage.Game.Robbery.PuzzleFlow),
 		TeamChooseController = require(replicatedStorage.TeamSelect.TeamChooseUI),
 		Turret = require(replicatedStorage.Turret2.Turret),
 		UI = require(replicatedStorage.Module.UI),
@@ -1766,7 +1768,7 @@ run(function()
 						jb:FireServer('Punch')
 					end
 	
-					task.wait(0.3)
+					task.wait(0.1)
 				until not AutoPunch.Enabled
 			end
 		end,
@@ -2608,6 +2610,64 @@ run(function()
 end)
 
 run(function()
+	local PunchModifications
+	local AutoPunch
+	local NoCooldown
+	local old
+	
+	PunchModifications = vape.Categories.Blatant:CreateModule({
+		Name = 'PunchModifications',
+		Function = function(callback)
+			if callback then
+				local punch
+				for _, obj in jb.ActionButtonService.active do
+					if obj.name == 'punch' then
+						punch = obj
+						break
+					end
+				end
+	
+				if punch then
+					if NoCooldown.Enabled then
+						old = debug.getupvalue(punch.onPressed, 1).attemptPunch
+						debug.setconstant(old, 3, 0.1)
+					end
+	
+					repeat
+						if AutoPunch.Enabled and punch._pressed then
+							task.spawn(punch.onPressed)
+						end
+	
+						task.wait(0.05)
+					until not PunchModifications.Enabled
+				end
+			else
+				if old then
+					debug.setconstant(old, 3, 0.5)
+					old = nil
+				end
+			end
+		end,
+		Tooltip = 'Modify certain behavior related to punching.'
+	})
+	AutoPunch = PunchModifications:CreateToggle({
+		Name = 'Automatic',
+		Tooltip = 'Automatically punch while the punch action is pressed.',
+		Default = true
+	})
+	NoCooldown = PunchModifications:CreateToggle({
+		Name = 'No Cooldown',
+		Function = function()
+			if PunchModifications.Enabled then
+				PunchModifications:Toggle()
+				PunchModifications:Toggle()
+			end
+		end,
+		Tooltip = 'Lower the punch cooldown to 0.1s (less = server ratelimit)'
+	})
+end)
+
+run(function()
 	local SeamPhase
 	local points = {
 		{
@@ -2811,8 +2871,7 @@ run(function()
 	local ModifySpeed
 	local Value
 	local Boat
-	local old
-	local oldboat
+	local old, oldboat
 	
 	VehicleModifications = vape.Categories.Blatant:CreateModule({
 		Name = 'VehicleModifications',
@@ -3035,6 +3094,76 @@ run(function()
 end)
 
 run(function()
+	local ActionModifications
+	local Instant
+	local NoWall
+	local old, oldindex
+	local await
+	
+	ActionModifications = vape.Categories.Utility:CreateModule({
+		Name = 'ActionModifications',
+		Function = function(callback)
+			if callback then
+				if Instant.Enabled then
+					old = hookfunction(jb.CircleAction.Press, function(...)
+						local action = jb.CircleAction.Spec
+						if action and action.Timed and not (action.ReleaseCallback or action.ShouldArrest or action.ShouldBreakout or action.ShouldHotwire or action.Name == 'Break In' or await) then
+							local old = action.Timed
+	
+							action.Timed = false
+							await = task.defer(function()
+								action.Timed = old
+								await = nil
+							end)
+						end
+	
+						return old(...)
+					end)
+				end
+	
+				if NoWall.Enabled then
+					oldindex = debug.getupvalue(jb.UI.CircleAction.UpdateLogic, 1)
+					debug.setconstant(oldindex, 47, 'Part')
+				end
+			else
+				if old then
+					restorefunction(jb.CircleAction.Press)
+					old = nil
+				end
+	
+				if oldindex then
+					debug.setconstant(oldindex, 47, 'NoRay')
+					oldindex = nil
+				end
+			end
+		end,
+		Tooltip = 'Allows you to modify certain properties of actions.'
+	})
+	Instant = ActionModifications:CreateToggle({
+		Name = 'Instant',
+		Function = function()
+			if ActionModifications.Enabled then
+				ActionModifications:Toggle()
+				ActionModifications:Toggle()
+			end
+		end,
+		Tooltip = 'Allows you to instantly complete certain ProximityPrompt actions.',
+		Default = true
+	})
+	NoWall = ActionModifications:CreateToggle({
+		Name = 'No wallcheck',
+		Function = function()
+			if ActionModifications.Enabled then
+				ActionModifications:Toggle()
+				ActionModifications:Toggle()
+			end
+		end,
+		Tooltip = 'Allows you to interact with all ProximityPrompts through walls.',
+		Default = true
+	})
+end)
+
+run(function()
 	local AutoEvict
 	local Whitelist
 	
@@ -3093,6 +3222,10 @@ run(function()
 	local AutoSolve
 	local CasinoKeypad
 	local CasinoVault
+	local PowerplantFlow
+	local directions = {{1, 0}, {-1, 0}, {0, 1}, {0, -1}}
+	local old
+	local state
 	
 	local function addVaultPuzzle(door)
 		local light = door:WaitForChild('InnerModel', 10):WaitForChild('LightPtr', 10).Value
@@ -3100,7 +3233,8 @@ run(function()
 	
 		if light and base and AutoSolve.Enabled then
 			AutoSolve:Clean(light:GetPropertyChangedSignal('Color'):Connect(function()
-				if light.Color ~= Color3.new(1, 0, 0) and entitylib.isAlive and (entitylib.character.RootPart.Position - base.Position).Magnitude < 12 then
+				local spec = jb.UI.CircleAction.Spec
+				if light.Color ~= Color3.new(1, 0, 0) and spec and spec.Part == base then
 					task.spawn(jb.UI.CircleAction.Press)
 					task.spawn(jb.UI.CircleAction.Release)
 				end
@@ -3150,6 +3284,80 @@ run(function()
 		end
 	end
 	
+	local function solvePuzzleFlow(grid)
+		local rows = #grid
+		local columns = #grid[1]
+		local endpoints = {}
+	
+		for row = 1, rows do
+			for column = 1, columns do
+				local color = grid[row][column]
+				if color >= 0 then
+					endpoints[color] = endpoints[color] or {}
+					table.insert(endpoints[color], {row, column})
+				end
+			end
+		end
+	
+		local colors = {}
+		for color, cells in endpoints do
+			if #cells ~= 2 then
+				return nil
+			end
+	
+			table.insert(colors, color)
+		end
+	
+		local function walk(index, row, column)
+			if index > #colors then
+				return true
+			end
+	
+			local color = colors[index]
+			local start = endpoints[color][1]
+			local finish = endpoints[color][2]
+			row = row or start[1]
+			column = column or start[2]
+	
+			if row == finish[1] and column == finish[2] then
+				return walk(index + 1)
+			end
+	
+			for _, direction in directions do
+				local nextRow = row + direction[1]
+				local nextColumn = column + direction[2]
+				if nextRow < 1 or nextRow > rows or nextColumn < 1 or nextColumn > columns then
+					continue
+				end
+	
+				if nextRow == finish[1] and nextColumn == finish[2] then
+					if walk(index + 1) then
+						return true
+					end
+	
+					continue
+				end
+	
+				if grid[nextRow][nextColumn] ~= -1 then
+					continue
+				end
+	
+				grid[nextRow][nextColumn] = color
+				if walk(index, nextRow, nextColumn) then
+					return true
+				end
+	
+				grid[nextRow][nextColumn] = -1
+			end
+	
+			return false
+		end
+	
+		if walk(1) then
+			return grid
+		end
+	end
+	
 	AutoSolve = vape.Categories.Utility:CreateModule({
 		Name = 'AutoSolve',
 		Function = function(callback)
@@ -3171,6 +3379,34 @@ run(function()
 					for _, obj in collectionService:GetTagged('VaultDoorPuzzle') do
 						task.spawn(addVaultPuzzle, obj)
 					end
+				end
+	
+				if PowerplantFlow.Enabled then
+					state = debug.getupvalue(jb.PuzzleFlow.Init, 3)
+	
+					if type(state) == 'table' and rawget(state, 'SetGrid') then
+						old = hookfunction(state.SetGrid, function(...)
+							task.defer(function()
+								if solvePuzzleFlow(state.Grid) then
+									task.spawn(pcall, state.OnConnection)
+								end
+							end)
+	
+							return old(...)
+						end)
+	
+						if state.IsOpen and solvePuzzleFlow(state.Grid) then
+							task.spawn(pcall, state.OnConnection)
+						end
+					else
+						state = nil
+					end
+				end
+			else
+				if old then
+					restorefunction(state.SetGrid)
+					old = nil
+					state = nil
 				end
 			end
 		end,
@@ -3198,6 +3434,17 @@ run(function()
 		Default = true,
 		Tooltip = 'Automatically complete the crack minigame at the casino vault doors.'
 	})
+	PowerplantFlow = AutoSolve:CreateToggle({
+		Name = 'Powerplant Flow',
+		Function = function()
+			if AutoSolve.Enabled then
+				AutoSolve:Toggle()
+				AutoSolve:Toggle()
+			end
+		end,
+		Default = true,
+		Tooltip = 'Automatically complete the puzzle flow minigame at the powerplant entrance.\n(big thanks to Stonifam for the solver implementation)'
+	})
 end)
 
 run(function()
@@ -3220,39 +3467,6 @@ run(function()
 			end
 		end,
 		Tooltip = 'Infinite boost for the local car'
-	})
-end)
-
-run(function()
-	local old
-	local await
-	
-	vape.Categories.Utility:CreateModule({
-		Name = 'InstantAction',
-		Function = function(callback)
-			if callback then
-				old = hookfunction(jb.CircleAction.Press, function(...)
-					local action = jb.CircleAction.Spec
-					if action and action.Timed and not (action.ReleaseCallback or action.ShouldArrest or action.ShouldBreakout or action.ShouldHotwire or action.Name == 'Break In' or await) then
-						local old = action.Timed
-	
-						action.Timed = false
-						await = task.defer(function()
-							action.Timed = old
-							await = nil
-						end)
-					end
-	
-					return old(...)
-				end)
-			else
-				if old then
-					restorefunction(jb.CircleAction.Press)
-					old = nil
-				end
-			end
-		end,
-		Tooltip = 'Allows you to instantly complete ProximityPrompt actions'
 	})
 end)
 
