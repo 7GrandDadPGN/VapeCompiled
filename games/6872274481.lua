@@ -1357,7 +1357,7 @@ run(function()
 		end,
 		Tooltip = 'Hold attack button to automatically click'
 	})
-	CPS = AutoClicker:CreateTwoSlider({
+	CPS = AutoClicker:CreateRangeSlider({
 		Name = 'CPS',
 		Min = 1,
 		Max = 9,
@@ -1373,7 +1373,7 @@ run(function()
 			end
 		end
 	})
-	BlockCPS = AutoClicker:CreateTwoSlider({
+	BlockCPS = AutoClicker:CreateRangeSlider({
 		Name = 'Block CPS',
 		Min = 1,
 		Max = 12,
@@ -1511,7 +1511,7 @@ run(function()
 		end,
 		Tooltip = 'Automatically swings when hovering over a entity'
 	})
-	CPS = TriggerBot:CreateTwoSlider({
+	CPS = TriggerBot:CreateRangeSlider({
 		Name = 'CPS',
 		Min = 1,
 		Max = 9,
@@ -3726,7 +3726,7 @@ run(function()
 			DistanceLimit.Object.Visible = callback
 		end
 	})
-	DistanceLimit = NameTags:CreateTwoSlider({
+	DistanceLimit = NameTags:CreateRangeSlider({
 		Name = 'Player Distance',
 		Min = 0,
 		Max = 256,

@@ -453,7 +453,7 @@ run(function()
 		end,
 		Tooltip = 'Hold attack button to automatically click'
 	})
-	CPS = AutoClicker:CreateTwoSlider({
+	CPS = AutoClicker:CreateRangeSlider({
 		Name = 'CPS',
 		Min = 1,
 		Max = 9,
@@ -467,7 +467,7 @@ run(function()
 			BlocksCPS.Object.Visible = callback
 		end
 	})
-	BlocksCPS = AutoClicker:CreateTwoSlider({
+	BlocksCPS = AutoClicker:CreateRangeSlider({
 		Name = 'Block CPS',
 		Min = 1,
 		Max = 20,
